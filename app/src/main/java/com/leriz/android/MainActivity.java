@@ -8,6 +8,7 @@ import android.webkit.ValueCallback;
 import android.webkit.JavascriptInterface;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLConnection;
 import java.io.OutputStream;
 import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
@@ -17,6 +18,10 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import java.util.Map;
+import java.util.HashMap;
 import android.view.View;
 import android.graphics.Color;
 
@@ -139,7 +144,46 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
-        webView.setWebViewClient(new WebViewClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                if (uri == null || !"https".equalsIgnoreCase(uri.getScheme()) ||
+                    !"subhyaloid-kallie-bihourly.ngrok-free.dev".equalsIgnoreCase(uri.getHost()) ||
+                    !"GET".equalsIgnoreCase(request.getMethod())) {
+                    return super.shouldInterceptRequest(view, request);
+                }
+                HttpURLConnection mediaConnection = null;
+                try {
+                    mediaConnection = (HttpURLConnection) new URL(uri.toString()).openConnection();
+                    mediaConnection.setInstanceFollowRedirects(true);
+                    mediaConnection.setConnectTimeout(20000);
+                    mediaConnection.setReadTimeout(60000);
+                    mediaConnection.setRequestProperty("ngrok-skip-browser-warning", "true");
+                    mediaConnection.setRequestProperty("Accept", "*/*");
+                    String range = request.getRequestHeaders().get("Range");
+                    if (range != null) mediaConnection.setRequestProperty("Range", range);
+                    String ua = request.getRequestHeaders().get("User-Agent");
+                    if (ua != null) mediaConnection.setRequestProperty("User-Agent", ua);
+                    int status = mediaConnection.getResponseCode();
+                    InputStream stream = status >= 400 ? mediaConnection.getErrorStream() : mediaConnection.getInputStream();
+                    Map<String, String> headers = new HashMap<>();
+                    for (Map.Entry<String, java.util.List<String>> entry : mediaConnection.getHeaderFields().entrySet()) {
+                        if (entry.getKey() != null && entry.getValue() != null && !entry.getValue().isEmpty())
+                            headers.put(entry.getKey(), String.join(", ", entry.getValue()));
+                    }
+                    headers.put("Access-Control-Allow-Origin", "*");
+                    String mime = mediaConnection.getContentType();
+                    if (mime == null) mime = URLConnection.guessContentTypeFromName(uri.getLastPathSegment());
+                    if (mime == null) mime = "application/octet-stream";
+                    String reason = status == 206 ? "Partial Content" : status >= 400 ? "Error" : "OK";
+                    return new WebResourceResponse(mime, mediaConnection.getContentEncoding(), status, reason, headers, stream);
+                } catch (Exception ex) {
+                    if (mediaConnection != null) mediaConnection.disconnect();
+                    return super.shouldInterceptRequest(view, request);
+                }
+            }
+        });
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
