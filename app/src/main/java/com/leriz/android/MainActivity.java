@@ -5,6 +5,14 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.ValueCallback;
+import android.webkit.JavascriptInterface;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.OutputStream;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import org.json.JSONObject;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -17,6 +25,60 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileCallback;
     private static final int FILE_CHOOSER_REQUEST = 7021;
 
+
+    private static final String API_BASE = "https://subhyaloid-kallie-bihourly.ngrok-free.dev";
+
+    public class LerizBridge {
+        @JavascriptInterface
+        public void request(String method, String path, String body, String contentType, String token, String callbackId) {
+            new Thread(() -> {
+                int status = 0;
+                String response = "{}";
+                HttpURLConnection connection = null;
+                try {
+                    URL url = new URL(API_BASE + (path.startsWith("/") ? path : "/" + path));
+                    connection = (HttpURLConnection) url.openConnection();
+                    connection.setRequestMethod(method);
+                    connection.setConnectTimeout(20000);
+                    connection.setReadTimeout(30000);
+                    connection.setRequestProperty("ngrok-skip-browser-warning", "true");
+                    connection.setRequestProperty("Accept", "application/json");
+                    if (contentType != null && !contentType.isEmpty()) connection.setRequestProperty("Content-Type", contentType);
+                    if (token != null && !token.isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + token);
+                    if (body != null && !body.isEmpty() && !method.equals("GET")) {
+                        connection.setDoOutput(true);
+                        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+                        connection.setFixedLengthStreamingMode(bytes.length);
+                        try (OutputStream out = connection.getOutputStream()) { out.write(bytes); }
+                    }
+                    status = connection.getResponseCode();
+                    InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+                    if (input != null) {
+                        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                        byte[] chunk = new byte[8192];
+                        int n;
+                        while ((n = input.read(chunk)) != -1) buffer.write(chunk, 0, n);
+                        response = buffer.toString("UTF-8");
+                        input.close();
+                    }
+                } catch (Exception e) {
+                    try { response = new JSONObject().put("error", e.getMessage() == null ? "Network error" : e.getMessage()).toString(); }
+                    catch (Exception ignored) {}
+                } finally {
+                    if (connection != null) connection.disconnect();
+                }
+                final int finalStatus = status;
+                final String finalResponse = response;
+                runOnUiThread(() -> {
+                    if (webView != null) {
+                        String escaped = JSONObject.quote(finalResponse);
+                        webView.evaluateJavascript("window.nativeResponse && window.nativeResponse(" + JSONObject.quote(callbackId) + "," + finalStatus + "," + escaped + ")", null);
+                    }
+                });
+            }).start();
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -27,6 +89,8 @@ public class MainActivity extends Activity {
         webView.setBackgroundColor(Color.rgb(5, 5, 8));
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
+        settings.setAllowUniversalAccessFromFileURLs(true);
+        webView.addJavascriptInterface(new LerizBridge(), "LerizNative");
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
