@@ -79,6 +79,49 @@ public class MainActivity extends Activity {
         }
     }
 
+
+        @JavascriptInterface
+        public void uploadVideo(String caption, String filename, String base64Data, String token, String callbackId) {
+            new Thread(() -> {
+                int status = 0;
+                String response = "{}";
+                HttpURLConnection connection = null;
+                String boundary = "LerizAndroidBoundary" + System.currentTimeMillis();
+                try {
+                    URL url = new URL(API_BASE + "/api/videos");
+                    connection = (HttpURLConnection) url.openConnection();
+                    connection.setRequestMethod("POST");
+                    connection.setConnectTimeout(30000);
+                    connection.setReadTimeout(120000);
+                    connection.setDoOutput(true);
+                    connection.setRequestProperty("ngrok-skip-browser-warning", "true");
+                    connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+                    if (token != null && !token.isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + token);
+                    byte[] video = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
+                    try (OutputStream out = connection.getOutputStream()) {
+                        out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + caption + "\r\n").getBytes(StandardCharsets.UTF_8));
+                        out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"video\"; filename=\"" + filename.replace("\"", "") + "\"\r\nContent-Type: video/mp4\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                        out.write(video);
+                        out.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+                    }
+                    status = connection.getResponseCode();
+                    InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+                    if (input != null) {
+                        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                        byte[] chunk = new byte[8192]; int n;
+                        while ((n = input.read(chunk)) != -1) buffer.write(chunk, 0, n);
+                        response = buffer.toString("UTF-8"); input.close();
+                    }
+                } catch (Exception e) {
+                    try { response = new JSONObject().put("error", e.getMessage() == null ? "Upload failed" : e.getMessage()).toString(); } catch (Exception ignored) {}
+                } finally { if (connection != null) connection.disconnect(); }
+                final int finalStatus = status; final String finalResponse = response;
+                runOnUiThread(() -> {
+                    if (webView != null) webView.evaluateJavascript("window.nativeResponse && window.nativeResponse(" + JSONObject.quote(callbackId) + "," + finalStatus + "," + JSONObject.quote(finalResponse) + ")", null);
+                });
+            }).start();
+        }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
