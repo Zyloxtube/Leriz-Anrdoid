@@ -77,8 +77,6 @@ public class MainActivity extends Activity {
                 });
             }).start();
         }
-    }
-
 
         @JavascriptInterface
         public void uploadVideo(String caption, String filename, String base64Data, String token, String callbackId) {
@@ -121,6 +119,7 @@ public class MainActivity extends Activity {
                 });
             }).start();
         }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
