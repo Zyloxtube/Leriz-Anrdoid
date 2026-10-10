@@ -1,0 +1,53 @@
+name: Build Leriz Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug
+
+      - name: Prepare direct APK
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/debug/app-debug.apk release/Leriz.apk
+          test -s release/Leriz.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Leriz-Android-APK
+          path: release/Leriz.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish direct APK download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: leriz-apk-build-${{ github.run_number }}
+          name: Leriz Android build ${{ github.run_number }}
+          files: release/Leriz.apk
+          generate_release_notes: false
