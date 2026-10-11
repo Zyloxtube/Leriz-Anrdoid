@@ -172,6 +172,20 @@
 
 
 #cameraCaptureOverlay{position:fixed;inset:0;z-index:10000;background:#050508;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 12px) 14px calc(env(safe-area-inset-bottom) + 14px);gap:12px}.camera-live-wrap{flex:1;min-height:0;position:relative;border-radius:22px;overflow:hidden;background:#111}.camera-live-wrap video{width:100%;height:100%;object-fit:cover}.camera-live-label{position:absolute;top:12px;left:12px;background:#0009;border-radius:12px;padding:8px 11px;font-size:12px}.camera-controls{display:flex;align-items:center;justify-content:space-around;gap:10px}.camera-control{border-radius:15px;background:#ffffff14;padding:12px 15px;min-width:70px}.camera-record{height:76px;width:76px;border:4px solid white;border-radius:50%;background:transparent;display:grid;place-items:center}.camera-record span{height:54px;width:54px;border-radius:50%;background:#fa285e;display:block}.camera-record.recording span{height:30px;width:30px;border-radius:8px}.camera-capture-title{font-weight:850;font-size:18px;padding:3px 5px}
+
+/* Caption layout: creator and optional title stay above the caption while it expands. */
+.clip-content{display:flex;flex-direction:column;align-items:stretch;gap:0}
+.clip-content .creator{flex:none;pointer-events:auto}
+.clip-title{margin-top:7px;font-size:14px;font-weight:800;line-height:1.25;overflow-wrap:anywhere;pointer-events:none}
+.caption-wrap{margin-top:7px;max-width:100%;min-width:0;pointer-events:auto}
+.caption-preview,.caption-short{display:block;width:100%;max-width:100%;margin:0;padding:0;border:0;background:transparent;color:#fff;text-align:left;font:inherit;font-size:14px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:clip}
+.caption-preview{cursor:pointer}
+.caption-preview .read-more{display:inline;color:#fff;font-weight:850;text-decoration:none;margin-left:3px}
+.caption-expanded{display:block;max-height:9.8em;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;touch-action:pan-y;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.4;color:#fff}
+.caption-expanded::-webkit-scrollbar{display:none}
+.caption-expanded-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.caption-less{display:block;margin:7px 0 0;padding:0;background:transparent;color:#fff;font-size:12px;font-weight:850;line-height:1.3}
+.clip-content.caption-is-expanded .caption-wrap{max-width:100%}
 </style></head>
 <body>
 <div id="auth" class="screen gradient"><div class="auth-wrap"><div class="auth"><div class="brand"><div class="logo"><span class="sym">all_inclusive</span></div><div class="wordmark">Leriz</div></div><p class="tagline">Your world. In motion.</p><div class="auth-card"><div class="segmented"><button id="loginTab" class="active" onclick="setAuth(false)">Log in</button><button id="signupTab" onclick="setAuth(true)">Sign up</button></div><div id="signupFields" class="field hidden"><label>USERNAME</label><div class="input-wrap"><span class="sym">person</span><input id="signupName" placeholder="Choose a username" autocomplete="username"></div></div><div class="field"><label>USERNAME</label><div class="input-wrap"><span class="sym">person</span><input id="loginName" placeholder="Your username" autocomplete="username"></div></div><div class="field"><label>PASSWORD</label><div class="input-wrap"><span class="sym">lock</span><input id="password" type="password" placeholder="Enter your password" autocomplete="current-password"></div></div><button class="primary" id="authButton" onclick="authenticate()">Log in <span class="sym">arrow_forward</span></button><div id="authError" class="error"></div></div><div class="slogan">MAKE EVERY MOMENT YOURS</div></div></div></div>
@@ -191,7 +205,47 @@ function videoURL(v){let u=v.videoURL||v.videoUrl||v.url||('/api/videos/'+v.id+'
 function avatar(u,name){let url=u&&(u.avatarURL||u.avatar_url);return url?'<img class="avatar" src="'+esc(url.startsWith('http')?url:API+(url.startsWith('/')?url:'/'+url))+'" onerror="this.outerHTML=\'<span class=avatar>\'+\'\'+\'</span>\'">':'<div class="avatar">'+esc((name||'L').slice(0,1).toUpperCase())+'</div>'}
 async function loadFeed(){if(page!=='home')return;$('feed').innerHTML='<div class="loading"><span class="spinner"></span>Loading videos…</div>';try{let d=await api('/api/feed?mode='+encodeURIComponent(feedMode)+'&limit=100&offset=0');videos=d.videos||[];renderFeed()}catch(e){$('feed').innerHTML='<div class="empty"><span class="sym">cloud_off</span><b>Could not load videos</b><p>'+esc(e.message)+'</p><button class="secondary" onclick="loadFeed()">Try again</button></div>'}}
 function followedHandleSet(){try{return new Set((JSON.parse(localStorage.getItem('lerizFollowedHandles')||'[]')||[]).map(x=>String(x).toLowerCase()))}catch(e){return new Set()}}
-function renderFeed(){if(!videos.length){$('feed').innerHTML='<div class="empty"><span class="sym">movie</span><b>No videos available</b><p>When creators upload videos, they will appear here.</p><button class="secondary" onclick="go(\'create\')">Upload a video</button></div>';return}const followed=followedHandleSet(),me=String(currentUser?.username||'').toLowerCase();$('feed').innerHTML=videos.map((v,i)=>{let u=v.user||{},name=u.displayName||u.display_name||u.username||'Creator',handle=u.username||'user',id=String(v.id),liked=!!v.likedByMe,saved=!!v.savedByMe,isMe=String(handle).toLowerCase()===me,isFollowing=followed.has(String(handle).toLowerCase())||!!u.isFollowing||!!u.following;return '<article class="clip" data-id="'+esc(id)+'" ontouchstart="beginVideoHold(event,\''+esc(id)+'\')" ontouchend="endVideoHold()" ontouchmove="moveVideoHold(event)" oncontextmenu="event.preventDefault();showVideoActions(\''+esc(id)+'\');return false"><video src="'+esc(videoURL(v))+'" playsinline loop preload="'+(i<2?'auto':'metadata')+'" onplaying="registerVideoView(\''+esc(id)+'\')" onclick="togglePlayback(this)" onended="this.currentTime=0;this.play()"></video><div class="play-indicator"><span class="sym">play_arrow</span></div><div class="clip-content"><div class="creator"><button class="creator-name-avatar" onclick="event.stopPropagation();openCreatorProfile(\''+esc(handle)+'\')" aria-label="Open creator profile">'+avatar(u,name)+'</button><button class="creator-name" onclick="event.stopPropagation();openCreatorProfile(\''+esc(handle)+'\')">'+esc(name)+'</button></div><div class="caption">'+esc(v.caption||'')+'</div><div class="audio"><span class="sym">music_note</span><button class="creator-handle" onclick="event.stopPropagation();openCreatorProfile(\''+esc(handle)+'\')">original audio · '+esc(handle)+'</button></div></div><div class="actions"><div class="creator-poster '+(isFollowing?'following':'')+'"><button class="creator-poster-open" onclick="event.stopPropagation();openCreatorProfile(\''+esc(handle)+'\')" aria-label="Open creator profile">'+avatar(u,name)+'</button>'+(isMe||isFollowing?'':'<button class="follow-plus" onclick="event.stopPropagation();followUser(\''+esc(handle)+'\',this)" aria-label="Follow creator">+</button>')+'</div><button class="action '+(liked?'liked':'')+'" onclick="likeVideo(\''+esc(id)+'\',this)"><span class="sym '+(liked?'filled':'')+'">'+(liked?'favorite':'favorite_border')+'</span><span>'+fmt(v.likes||0)+'</span></button><button class="action" onclick="openComments(\''+esc(id)+'\')"><span class="sym">chat_bubble</span><span>'+fmt(v.comments||0)+'</span></button><button class="action '+(saved?'liked':'')+'" onclick="saveVideo(\''+esc(id)+'\',this)"><span class="sym '+(saved?'filled':'')+'">'+(saved?'bookmark':'bookmark_border')+'</span><span>Save</span></button><button class="action" onclick="shareVideo(\''+esc(id)+'\')"><span class="sym">share</span><span>Share</span></button></div></article>'}).join('');observeVideos()}
+function renderFeed(){
+ if(!videos.length){
+  $('feed').innerHTML='<div class="empty"><span class="sym">movie</span><b>No videos available</b><p>When creators upload videos, they will appear here.</p><button class="secondary" onclick="go(\\'create\\')">Upload a video</button></div>';
+  return;
+ }
+ const followed=followedHandleSet(),me=String(currentUser?.username||'').toLowerCase();
+ $('feed').innerHTML=videos.map((v,i)=>{
+  let u=v.user||{},name=u.displayName||u.display_name||u.username||'Creator',handle=u.username||'user',id=String(v.id),liked=!!v.likedByMe,saved=!!v.savedByMe,isMe=String(handle).toLowerCase()===me,isFollowing=followed.has(String(handle).toLowerCase())||!!u.isFollowing||!!u.following;
+  const storedCaption=String(v.caption??v.description??''),parts=splitVideoTitleCaption(storedCaption);
+  const title=String(v.title||v.videoTitle||v.video_title||parts.title||'').trim(),caption=String(parts.caption||'');
+  const chars=Array.from(caption),isLong=chars.length>30,previewText=isLong?chars.slice(0,30).join('')+'...':caption;
+  let captionMarkup='';
+  if(isLong){
+   captionMarkup='<div class="caption-wrap"><button type="button" class="caption-preview" id="captionPreview-'+esc(id)+'" onclick="toggleFeedCaption(event,\\''+esc(id)+'\\',true)">'+esc(previewText)+' <span class="read-more">Read More</span></button><div class="caption-expanded hidden" id="captionExpanded-'+esc(id)+'"><div class="caption-expanded-text">'+esc(caption)+'</div><button type="button" class="caption-less" onclick="toggleFeedCaption(event,\\''+esc(id)+'\\',false)">Read Less</button></div></div>';
+  }else if(caption){
+   captionMarkup='<div class="caption-wrap"><div class="caption-short">'+esc(caption)+'</div></div>';
+  }
+  const titleMarkup=title?'<div class="clip-title">'+esc(title)+'</div>':'';
+  return '<article class="clip" data-id="'+esc(id)+'" ontouchstart="beginVideoHold(event,\\''+esc(id)+'\\')" ontouchend="endVideoHold()" ontouchmove="moveVideoHold(event)" oncontextmenu="event.preventDefault();showVideoActions(\\''+esc(id)+'\\');return false"><video src="'+esc(videoURL(v))+'" playsinline loop preload="'+(i<2?'auto':'metadata')+'" onplaying="registerVideoView(\\''+esc(id)+'\\')" onclick="togglePlayback(this)" onended="this.currentTime=0;this.play()"></video><div class="play-indicator"><span class="sym">play_arrow</span></div><div class="clip-content"><div class="creator"><button class="creator-name-avatar" onclick="event.stopPropagation();openCreatorProfile(\\''+esc(handle)+'\\')" aria-label="Open creator profile">'+avatar(u,name)+'</button><button class="creator-name" onclick="event.stopPropagation();openCreatorProfile(\\''+esc(handle)+'\\')">'+esc(name)+'</button></div>'+titleMarkup+captionMarkup+'<div class="audio"><span class="sym">music_note</span><button class="creator-handle" onclick="event.stopPropagation();openCreatorProfile(\\''+esc(handle)+'\\')">original audio · '+esc(handle)+'</button></div></div><div class="actions"><div class="creator-poster '+(isFollowing?'following':'')+'"><button class="creator-poster-open" onclick="event.stopPropagation();openCreatorProfile(\\''+esc(handle)+'\\')" aria-label="Open creator profile">'+avatar(u,name)+'</button>'+(isMe||isFollowing?'':'<button class="follow-plus" onclick="event.stopPropagation();followUser(\\''+esc(handle)+'\\',this)" aria-label="Follow creator">+</button>')+'</div><button class="action '+(liked?'liked':'')+'" onclick="likeVideo(\\''+esc(id)+'\\',this)"><span class="sym '+(liked?'filled':'')+'">'+(liked?'favorite':'favorite_border')+'</span><span>'+fmt(v.likes||0)+'</span></button><button class="action" onclick="openComments(\\''+esc(id)+'\\')"><span class="sym">chat_bubble</span><span>'+fmt(v.comments||0)+'</span></button><button class="action '+(saved?'liked':'')+'" onclick="saveVideo(\\''+esc(id)+'\\',this)"><span class="sym '+(saved?'filled':'')+'">'+(saved?'bookmark':'bookmark_border')+'</span><span>Save</span></button><button class="action" onclick="shareVideo(\\''+esc(id)+'\\')"><span class="sym">share</span><span>Share</span></button></div></article>';
+ }).join('');
+ observeVideos();
+}
+function splitVideoTitleCaption(raw){
+ raw=String(raw||'');
+ const marker=String.fromCharCode(30)+'LERIZ_TITLE:';
+ if(raw.startsWith(marker)){
+  const nl=raw.indexOf(String.fromCharCode(10));
+  if(nl>=0)return {title:raw.slice(marker.length,nl).trim(),caption:raw.slice(nl+1)};
+  return {title:raw.slice(marker.length).trim(),caption:''};
+ }
+ return {title:'',caption:raw};
+}
+function toggleFeedCaption(event,id,expanded){
+ if(event)event.stopPropagation();
+ const preview=document.getElementById('captionPreview-'+id),full=document.getElementById('captionExpanded-'+id);
+ if(!preview||!full)return;
+ preview.classList.toggle('hidden',!!expanded);
+ full.classList.toggle('hidden',!expanded);
+ const content=preview.closest('.clip-content');
+ if(content)content.classList.toggle('caption-is-expanded',!!expanded);
+}
 function openCreatorProfile(username){username=String(username||'').replace(/^@/,'').trim();if(!username)return;if(String(currentUser?.username||'').toLowerCase()===username.toLowerCase()){go('profile');return}const clip=videos.find(v=>String(v.user?.username||'').toLowerCase()===username.toLowerCase());const u=clip?.user||{};page='creator-profile';$('app').classList.add('page-mode');$('feedTabs').classList.add('hidden');document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));const main=$('main');main.className='feed-area';main.innerHTML='<section id="pageContent" class="page"><div class="profile-toolbar"><button class="icon-btn" onclick="go(\'home\')" aria-label="Back"><span class="sym">chevron_left</span></button><div class="page-title">Profile</div><span></span></div><div class="loading"><span class="spinner"></span>Loading profile…</div></section>';const p=$('pageContent');(async()=>{try{let d=await api('/api/feed?mode=discover&limit=100&offset=0');let rows=(d.videos||[]).filter(v=>String(v.user?.username||'').toLowerCase()===username.toLowerCase());let person=rows[0]?.user||u;let display=person.displayName||person.display_name||person.username||username;let followed=followedHandleSet().has(username.toLowerCase())||!!person.isFollowing||!!person.following;let likes=rows.reduce((n,v)=>n+(Number(v.likes)||0),0);p.innerHTML='<div class="profile-toolbar"><button class="icon-btn" onclick="go(\'home\')" aria-label="Back"><span class="sym">chevron_left</span></button><div class="page-title">Profile</div><span></span></div><div class="profile-head">'+avatar(person,display)+'<div><div class="profile-name">'+esc(display)+'</div><div class="muted">@'+esc(username)+'</div></div></div><div class="stats"><div class="stat"><b>'+fmt(person.followers||0)+'</b><span>Followers</span></div><div class="stat"><b>'+fmt(person.following||0)+'</b><span>Following</span></div><div class="stat"><b>'+fmt(likes)+'</b><span>Likes</span></div></div><p class="profile-bio">'+esc(person.bio||'Creator on Leriz')+'</p><div class="profile-buttons"><button class="secondary" id="creatorFollowButton" onclick="followProfileCreator(\''+esc(username)+'\',this)">'+(followed?'Following':'Follow')+'</button></div><div class="profile-grid">'+(rows.length?rows.map(v=>'<div class="grid-video" onclick="openGridVideo(\''+esc(v.id)+'\')"><video src="'+esc(videoURL(v))+'" muted playsinline preload="metadata"></video><span class="views"><span class="sym">visibility</span>'+fmt(v.views||v.viewCount||v.view_count||0)+'</span></div>').join(''):'<div class="empty"><b>No videos yet</b></div>')+'</div>';p.querySelectorAll('video').forEach(el=>el.addEventListener('loadedmetadata',()=>{try{el.currentTime=Math.min(1,el.duration/3)}catch(e){}}))}catch(e){p.innerHTML='<div class="profile-toolbar"><button class="icon-btn" onclick="go(\'home\')" aria-label="Back"><span class="sym">chevron_left</span></button><div class="page-title">Profile</div><span></span></div><div class="empty"><b>Could not load profile</b><p>'+esc(e.message)+'</p></div>'}})()}
 async function followProfileCreator(username,btn){try{let d=await api('/api/users/'+encodeURIComponent(username)+'/follow','POST',{username});let following=!(d.following===false||d.followed===false||d.isFollowing===false);let set=followedHandleSet();if(following)set.add(username.toLowerCase());else set.delete(username.toLowerCase());localStorage.setItem('lerizFollowedHandles',JSON.stringify(Array.from(set)));if(btn)btn.textContent=following?'Following':'Follow';toast(following?'Following @'+username:'Unfollowed @'+username)}catch(e){toast(e.message)}}
 function displayVideoCaption(raw){raw=String(raw||'');let marker=String.fromCharCode(30)+'LERIZ_TITLE:';if(raw.startsWith(marker)){let nl=raw.indexOf(String.fromCharCode(10));if(nl>=0){let title=raw.slice(marker.length,nl).trim(),caption=raw.slice(nl+1);return (title?title+String.fromCharCode(10):'')+caption}}return raw}
@@ -224,7 +278,7 @@ function renderDiscover(p){p.innerHTML='<div class="page-title">Discover</div><d
 async function searchDiscover(q){let out=$('discoverResults');if(!out)return;clearTimeout(searchTimer);searchTimer=setTimeout(async()=>{try{let d=await api('/api/feed?mode=discover&limit=100&offset=0');let rows=d.videos||[];if(q&&q[0]!=='#')rows=rows.filter(v=>JSON.stringify(v).toLowerCase().includes(q.toLowerCase()));out.innerHTML=rows.map(v=>'<div class="grid-video" data-view-video-id="'+esc(v.id)+'" onclick="openGridVideo(\''+esc(v.id)+'\')"><video src="'+esc(videoURL(v))+'" muted playsinline preload="metadata"></video><span class="views">▶ '+fmt(v.views||0)+'</span></div>').join('');$('discoverStatus').textContent=rows.length?rows.length+' videos':'No videos found';out.querySelectorAll('video').forEach(v=>v.addEventListener('loadedmetadata',()=>{try{v.currentTime=Math.min(1,v.duration/3)}catch(e){}}))}catch(e){$('discoverStatus').textContent=e.message}},280)}
 function openGridVideo(id){go('home');setTimeout(()=>{let el=[...document.querySelectorAll('.clip')].find(x=>x.dataset.id===String(id));if(el)el.scrollIntoView({behavior:'smooth'})},150)}
 function renderSearch(p){p.innerHTML='<div class="page-title">Search</div><div class="searchbox"><span class="sym">search</span><input id="searchInput" placeholder="Search videos and creators" oninput="searchDiscover(this.value)"></div><div class="video-grid" id="discoverResults"></div><div id="discoverStatus" class="muted">Start typing to search</div>'}
-let selectedCameraFilter='None',selectedVideoFile=null,editorOverlayText='',cameraStream=null,cameraRecorder=null,cameraChunks=[],cameraFacing='environment',cameraPermissionRequests={},selectedPreviewURL=null,editorPreviewURL=null,commentLikeOverrides={},commentsPollTimer=null,commentsPollBusy=false,replyParentMap={};try{replyParentMap=JSON.parse(localStorage.getItem('lerizReplyParents')||'{}')||{}}catch(e){replyParentMap={}}
+let selectedCameraFilter='None',selectedVideoFile=null,editorOverlayText='',cameraStream=null,cameraRecorder=null,cameraChunks=[],cameraFacing='environment',cameraAudioAvailable=true,cameraPermissionRequests={},selectedPreviewURL=null,editorPreviewURL=null,commentLikeOverrides={},commentsPollTimer=null,commentsPollBusy=false,replyParentMap={};try{replyParentMap=JSON.parse(localStorage.getItem('lerizReplyParents')||'{}')||{}}catch(e){replyParentMap={}}
 function renderCreate(p){
  selectedVideoFile=null;editorOverlayText='';selectedCameraFilter='None';
  p.innerHTML='<div class="create-shell"><div class="create-top"><button class="secondary" onclick="go(\'home\')">Cancel</button><div class="page-title">Create</div><button class="secondary" id="createNext" onclick="openVideoEditor()" disabled>Next</button></div><div class="create-preview" id="createPreview"><span class="sym preview-icon">videocam</span><div class="preview-caption" id="previewCaption">Record a video or choose one from your library</div></div><div class="create-filters">'+['None','Glasses','Cat','Crown','Dog','Robot'].map(function(x,i){return '<button class="create-filter '+(i===0?'active':'')+'" onclick="selectCameraFilter(\''+x+'\',this)"><span class="filter-icon sym">'+['camera_alt','eyeglasses','pets','workspace_premium','pets','smart_toy'][i]+'</span>'+x+'</button>'}).join('')+'</div><div class="create-bottom"><button class="media-pick" onclick="pickVideoFromLibrary()" aria-label="Choose video"><span class="sym">photo_library</span></button><input id="videoFile" type="file" accept="video/*" onchange="previewSelectedVideo(this)"><span class="spacer"></span><button class="record-button" onclick="openCameraCapture()" aria-label="Record video"><span></span></button><span class="spacer"></span><button class="media-pick" onclick="pickVideoFromLibrary()" aria-label="Import video"><span class="sym">add_photo_alternate</span></button></div><div class="create-hint" id="createHint">Record a video with your camera</div></div>';
@@ -237,9 +291,79 @@ function previewSelectedVideo(input){let f=input.files&&input.files[0];if(f)useS
 function useSelectedVideoFile(f){let name=String(f.name||'').toLowerCase(),type=String(f.type||'').toLowerCase(),looksLikeVideo=type.startsWith('video/')||/\.(mp4|mov|m4v|webm|3gp|mkv|avi|mpeg|mpg)$/i.test(name);if(!looksLikeVideo){toast('Please choose a video');let input=$('videoFile');if(input)input.value='';return}selectedVideoFile=f;if(selectedPreviewURL)URL.revokeObjectURL(selectedPreviewURL);selectedPreviewURL=URL.createObjectURL(f);let box=$('createPreview');if(box){box.innerHTML='<video id="selectedPreview" controls playsinline preload="metadata"></video><div class="preview-caption">Video selected · tap Next to edit</div>';let v=$('selectedPreview');v.onerror=function(){let hint=$('createHint');if(hint)hint.textContent='Could not preview this video. Try another format.';toast('This video format could not be previewed on this device')};v.onloadedmetadata=function(){try{v.currentTime=0}catch(e){}applyPreviewFilter(v);let next=$('createNext');if(next)next.disabled=false};v.src=selectedPreviewURL;v.load();v.play().catch(function(){})}let next=$('createNext');if(next)next.disabled=false;let hint=$('createHint');if(hint)hint.textContent=f.name||'Video selected'}
 function openCameraCapture(){if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||!window.MediaRecorder){toast('In-app recording is not supported by this WebView. Update Android System WebView and try again.');return}let existing=$('cameraCaptureOverlay');if(existing)existing.remove();document.body.insertAdjacentHTML('beforeend','<div id="cameraCaptureOverlay"><div class="camera-capture-title">Record video</div><div class="camera-live-wrap"><video id="cameraLivePreview" autoplay muted playsinline></video><div class="camera-live-label" id="cameraLiveStatus">Starting camera…</div></div><div class="camera-controls"><button class="camera-control" onclick="flipInAppCamera()">Flip camera</button><button class="camera-record" id="cameraRecordButton" onclick="toggleInAppRecording()"><span></span></button><button class="camera-control" onclick="cancelInAppCamera()">Cancel</button></div><div class="muted" style="text-align:center">Recording stays inside Leriz</div></div>');if(window.LerizNative&&LerizNative.requestCameraPermissions){let id='cam'+Date.now();cameraPermissionRequests[id]=true;LerizNative.requestCameraPermissions(id)}else startInAppCamera()}
 function cameraPermissionResult(id,granted){if(!cameraPermissionRequests[id])return;delete cameraPermissionRequests[id];if(!granted){toast('Camera and microphone permissions are required to record');cancelInAppCamera();return}startInAppCamera()}
-async function startInAppCamera(){try{if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());cameraStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:cameraFacing},width:{ideal:1080},height:{ideal:1920}},audio:true});let v=$('cameraLivePreview');if(!v){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;return}v.srcObject=cameraStream;v.style.filter=filterCss(selectedCameraFilter);await v.play();let s=$('cameraLiveStatus');if(s)s.textContent='Ready to record'}catch(e){toast('Could not start in-app camera: '+(e.message||'permission or camera unavailable'));cancelInAppCamera()}}
+async function startInAppCamera(){
+ try{
+  if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());
+  cameraStream=null;cameraAudioAvailable=true;
+  const videoConstraints={facingMode:{ideal:cameraFacing},width:{ideal:1080},height:{ideal:1920}};
+  try{
+   cameraStream=await navigator.mediaDevices.getUserMedia({video:videoConstraints,audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  }catch(audioError){
+   console.warn('Microphone initialization failed; opening video-only camera',audioError);
+   cameraStream=await navigator.mediaDevices.getUserMedia({video:videoConstraints,audio:false});
+   cameraAudioAvailable=false;
+  }
+  let v=$('cameraLivePreview');
+  if(!v){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;return}
+  v.srcObject=cameraStream;v.style.filter=filterCss(selectedCameraFilter);await v.play();
+  let st=$('cameraLiveStatus');
+  if(st)st.textContent=cameraAudioAvailable?'Ready to record':'Ready to record · microphone unavailable';
+  if(!cameraAudioAvailable)toast('Microphone unavailable; you can still record video without sound');
+ }catch(e){toast('Could not start in-app camera: '+(e.message||'permission or camera unavailable'));cancelInAppCamera()}
+}
 async function flipInAppCamera(){cameraFacing=cameraFacing==='environment'?'user':'environment';if(cameraRecorder&&cameraRecorder.state==='recording'){toast('Stop recording before flipping the camera');cameraFacing=cameraFacing==='environment'?'user':'environment';return}await startInAppCamera()}
-function toggleInAppRecording(){let btn=$('cameraRecordButton'),status=$('cameraLiveStatus');if(cameraRecorder&&cameraRecorder.state==='recording'){cameraRecorder.stop();if(btn)btn.classList.remove('recording');if(status)status.textContent='Finishing recording…';return}if(!cameraStream){toast('Camera is not ready yet');return}cameraChunks=[];let types=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp8,opus','video/webm'],mime=types.find(t=>MediaRecorder.isTypeSupported(t));try{cameraRecorder=new MediaRecorder(cameraStream,mime?{mimeType:mime,videoBitsPerSecond:5000000}:undefined)}catch(e){toast('This device cannot record video in the available formats');return}cameraRecorder.ondataavailable=e=>{if(e.data&&e.data.size)cameraChunks.push(e.data)};cameraRecorder.onerror=()=>{toast('Camera recording failed');cancelInAppCamera()};cameraRecorder.onstop=()=>{let type=cameraRecorder.mimeType||cameraChunks[0]?.type||'video/webm',blob=new Blob(cameraChunks,{type:type});stopCameraTracks();let overlay=$('cameraCaptureOverlay');if(overlay)overlay.remove();if(blob.size<1024){toast('Recording was empty. Please try again.');return}let ext=type.toLowerCase().includes('mp4')?'.mp4':'.webm';useSelectedVideoFile(new File([blob],'Leriz-recording-'+Date.now()+ext,{type:type}));toast('Recording ready · tap Next to edit')};cameraRecorder.start(1000);if(btn)btn.classList.add('recording');if(status)status.textContent='Recording…'}
+function toggleInAppRecording(){
+ let btn=$('cameraRecordButton'),status=$('cameraLiveStatus');
+ if(cameraRecorder&&cameraRecorder.state==='recording'){
+  cameraRecorder.stop();if(btn)btn.classList.remove('recording');if(status)status.textContent='Finishing recording…';return;
+ }
+ if(!cameraStream){toast('Camera is not ready yet');return}
+ if(typeof MediaRecorder==='undefined'){toast('Video recording is not supported by this Android WebView');return}
+ cameraChunks=[];
+ function createRecorder(stream,withAudio){
+  const types=withAudio?['video/webm;codecs=vp8,opus','video/webm']:['video/webm;codecs=vp8','video/webm'];
+  let mime='';
+  for(const t of types){try{if(MediaRecorder.isTypeSupported(t)){mime=t;break}}catch(e){}}
+  let rec=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:3500000}:{videoBitsPerSecond:3500000});
+  rec.ondataavailable=e=>{if(e.data&&e.data.size)cameraChunks.push(e.data)};
+  rec.onerror=e=>{console.warn('MediaRecorder failed',e);toast('Recording failed. Please try again.');cancelInAppCamera()};
+  rec.onstop=()=>{
+   let type=rec.mimeType||cameraChunks[0]?.type||'video/webm';
+   let blob=new Blob(cameraChunks,{type:type});
+   stopCameraTracks();
+   let overlay=$('cameraCaptureOverlay');if(overlay)overlay.remove();
+   if(blob.size<1024){toast('Recording was empty. Please try again.');return}
+   let ext=type.toLowerCase().includes('mp4')?'.mp4':'.webm';
+   useSelectedVideoFile(new File([blob],'Leriz-recording-'+Date.now()+ext,{type:type}));
+   toast('Recording ready · tap Next to edit');
+  };
+  return rec;
+ }
+ try{
+  cameraRecorder=createRecorder(cameraStream,cameraAudioAvailable&&cameraStream.getAudioTracks().length>0);
+  cameraRecorder.start(1000);
+ }catch(startError){
+  console.warn('Recorder with microphone failed; retrying without audio',startError);
+  if(cameraRecorder){cameraRecorder.ondataavailable=null;cameraRecorder.onerror=null;cameraRecorder.onstop=null;try{if(cameraRecorder.state!=='inactive')cameraRecorder.stop()}catch(e){}}
+  try{
+   const videoTracks=cameraStream.getVideoTracks();
+   if(!videoTracks.length)throw new Error('Camera video track is unavailable');
+   const videoOnlyStream=new MediaStream(videoTracks);
+   cameraRecorder=createRecorder(videoOnlyStream,false);
+   cameraRecorder.start(1000);
+   cameraAudioAvailable=false;
+   if(status)status.textContent='Recording without microphone audio…';
+   toast('Microphone source failed; recording video without sound');
+  }catch(fallbackError){
+   cameraRecorder=null;
+   toast('Could not start recording: '+(fallbackError.message||startError.message||'camera unavailable'));
+   if(status)status.textContent='Could not start recording. Check camera permission and try again.';
+   return;
+  }
+ }
+ if(btn)btn.classList.add('recording');
+ if(status&&cameraAudioAvailable)status.textContent='Recording…';
+}
 function stopCameraTracks(){if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null}cameraRecorder=null}
 function cancelInAppCamera(){if(cameraRecorder&&cameraRecorder.state==='recording'){cameraRecorder.onstop=null;try{cameraRecorder.stop()}catch(e){}}stopCameraTracks();let overlay=$('cameraCaptureOverlay');if(overlay)overlay.remove()}
 function openVideoEditor(){if(!selectedVideoFile){toast('Record or choose a video first');return}let p=$('pageContent');if(!p){toast('Could not open the editor. Please try again.');return}if(editorPreviewURL)URL.revokeObjectURL(editorPreviewURL);let url=URL.createObjectURL(selectedVideoFile);editorPreviewURL=url;p.innerHTML='<div class="create-top"><button class="secondary" onclick="returnToVideoSelection()">Back</button><div class="page-title">Edit video</div><button class="secondary" onclick="cancelVideoEditor()">Cancel</button></div><div class="editor-shell"><div class="editor-preview"><video id="editorVideo" playsinline controls preload="metadata"></video><div class="editor-overlay-text" id="editorOverlayText"></div></div><input class="editor-field" id="videoTitle" maxlength="120" placeholder="Add a title…"><textarea class="editor-field" id="videoCaption" placeholder="Write a caption…" rows="3"></textarea><div class="muted" id="editorFilterNote">Filter: '+esc(selectedCameraFilter)+' · Preview and export</div><div class="muted">Preview your video, add a title and caption.</div><button class="primary editor-post" id="uploadBtn" onclick="uploadVideo()">Post video <span class="sym">cloud_upload</span></button><div id="uploadStatus" class="muted"></div></div>';let v=$('editorVideo');v.style.filter=filterCss(selectedCameraFilter);v.onerror=function(){let st=$('uploadStatus');if(st)st.textContent='Could not load this video preview. Go back and choose the video again.'};v.onloadedmetadata=function(){let note=$('editorFilterNote');if(note)note.textContent='Filter: '+selectedCameraFilter+' · '+Math.round(v.duration||0)+'s · Preview and export'};v.src=url;v.load();v.play().catch(function(){});}
