@@ -21,6 +21,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
 import android.webkit.WebChromeClient;
+import android.webkit.PermissionRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -38,6 +39,7 @@ public class MainActivity extends Activity {
     private static final int CAMERA_CAPTURE_REQUEST = 7022;
     private static final int CAMERA_PERMISSION_REQUEST = 7023;
     private Uri pendingCaptureUri;
+    private String pendingCameraPermissionCallback;
 
 
     private static final String API_BASE = "https://subhyaloid-kallie-bihourly.ngrok-free.dev";
@@ -57,6 +59,21 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void clearAuthToken() {
             getSharedPreferences("leriz_auth", MODE_PRIVATE).edit().remove("token").apply();
+        }
+
+        @JavascriptInterface
+        public void requestCameraPermissions(String callbackId) {
+            runOnUiThread(() -> {
+                boolean granted =
+                    checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
+                    checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+                if (granted) {
+                    sendCameraPermissionResult(callbackId, true);
+                } else {
+                    pendingCameraPermissionCallback = callbackId;
+                    requestPermissions(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO}, CAMERA_PERMISSION_REQUEST);
+                }
+            });
         }
 
         @JavascriptInterface
@@ -130,7 +147,14 @@ public class MainActivity extends Activity {
                         out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + caption + "\r\n").getBytes(StandardCharsets.UTF_8));
                         String safeFilename = filename == null ? "leriz-upload.mp4" : filename.replace("\"", "").replace("\r", "").replace("\n", "");
                         String lowerFilename = safeFilename.toLowerCase(java.util.Locale.ROOT);
-                        String videoMime = lowerFilename.endsWith(".webm") ? "video/webm" : lowerFilename.endsWith(".mov") ? "video/quicktime" : "video/mp4";
+                        String videoMime;
+                        if (lowerFilename.endsWith(".webm")) videoMime = "video/webm";
+                        else if (lowerFilename.endsWith(".mov")) videoMime = "video/quicktime";
+                        else if (lowerFilename.endsWith(".3gp")) videoMime = "video/3gpp";
+                        else if (lowerFilename.endsWith(".m4v")) videoMime = "video/x-m4v";
+                        else if (lowerFilename.endsWith(".mkv")) videoMime = "video/x-matroska";
+                        else if (lowerFilename.endsWith(".avi")) videoMime = "video/x-msvideo";
+                        else videoMime = "video/mp4";
                         out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"video\"; filename=\"" + safeFilename + "\"\r\nContent-Type: " + videoMime + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
                         out.write(video);
                         out.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
@@ -214,6 +238,26 @@ public class MainActivity extends Activity {
         });
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                runOnUiThread(() -> {
+                    if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
+                        checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                        request.deny();
+                        return;
+                    }
+                    String[] resources = request.getResources();
+                    for (String resource : resources) {
+                        if (!PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource) &&
+                            !PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) {
+                            request.deny();
+                            return;
+                        }
+                    }
+                    request.grant(resources);
+                });
+            }
+
+            @Override
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
                 fileCallback = callback;
@@ -268,17 +312,29 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void sendCameraPermissionResult(String callbackId, boolean granted) {
+        if (webView == null || callbackId == null) return;
+        webView.evaluateJavascript(
+            "window.cameraPermissionResult && window.cameraPermissionResult(" +
+                JSONObject.quote(callbackId) + "," + granted + ")", null);
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == CAMERA_PERMISSION_REQUEST) {
-            // Check the actual current permission state instead of assuming Android
-            // always returns both permission results in a particular order/length.
             boolean granted =
                 checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
                 checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
-            if (granted) startVideoCapture();
-            else {
+            if (pendingCameraPermissionCallback != null) {
+                String callbackId = pendingCameraPermissionCallback;
+                pendingCameraPermissionCallback = null;
+                sendCameraPermissionResult(callbackId, granted);
+                if (!granted && webView != null)
+                    webView.evaluateJavascript("window.toast && toast('Camera and microphone permissions are needed to record video.')", null);
+            } else if (granted) {
+                startVideoCapture();
+            } else {
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
                 fileCallback = null;
                 if (webView != null) webView.evaluateJavascript("window.toast && toast('Camera and microphone permissions are needed to record video.')", null);
