@@ -218,7 +218,7 @@ function renderFeed(){
   const chars=Array.from(caption),isLong=chars.length>30,previewText=isLong?chars.slice(0,30).join('')+'...':caption;
   let captionMarkup='';
   if(isLong){
-   captionMarkup='<div class="caption-wrap"><button type="button" class="caption-preview" id="captionPreview-'+esc(id)+'" onclick="toggleFeedCaption(event,\''+esc(id)+'\',true)">'+esc(previewText)+' <span class="read-more">Read More</span></button><div class="caption-expanded hidden" id="captionExpanded-'+esc(id)+'"><div class="caption-expanded-text">'+esc(caption)+'</div><button type="button" class="caption-less" onclick="toggleFeedCaption(event,\''+esc(id)+'\',false)">Read Less</button></div></div>';
+   captionMarkup='<div class="caption-wrap"><button type="button" class="caption-preview" id="captionPreview-'+esc(id)+'" onclick="toggleFeedCaption(event,\''+esc(id)+'\',true)">'+esc(previewText)+' <span class="read-more">Read More</span></button><div class="caption-expanded hidden" id="captionExpanded-'+esc(id)+'" onclick="toggleFeedCaption(event,\\''+esc(id)+'\\',false)"><div class="caption-expanded-text">'+esc(caption)+'</div><button type="button" class="caption-less" onclick="toggleFeedCaption(event,\''+esc(id)+'\',false)">Read Less</button></div></div>';
   }else if(caption){
    captionMarkup='<div class="caption-wrap"><div class="caption-short">'+esc(caption)+'</div></div>';
   }
