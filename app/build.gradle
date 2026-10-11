@@ -2,6 +2,10 @@ plugins {
     id 'com.android.application'
 }
 
+dependencies {
+    implementation 'com.google.ar:core:1.50.0'
+}
+
 android {
     namespace 'com.leriz.android'
     compileSdk 35
