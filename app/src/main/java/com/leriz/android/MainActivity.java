@@ -143,21 +143,25 @@ public class MainActivity extends Activity {
                     connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
                     if (token != null && !token.isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + token);
                     byte[] video = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
+                    String safeFilename = filename == null ? "leriz-upload.mp4" : filename.replace("\"", "").replace("\r", "").replace("\n", "");
+                    String lowerFilename = safeFilename.toLowerCase(java.util.Locale.ROOT);
+                    String videoMime;
+                    if (lowerFilename.endsWith(".webm")) videoMime = "video/webm";
+                    else if (lowerFilename.endsWith(".mov")) videoMime = "video/quicktime";
+                    else if (lowerFilename.endsWith(".3gp")) videoMime = "video/3gpp";
+                    else if (lowerFilename.endsWith(".m4v")) videoMime = "video/x-m4v";
+                    else if (lowerFilename.endsWith(".mkv")) videoMime = "video/x-matroska";
+                    else if (lowerFilename.endsWith(".avi")) videoMime = "video/x-msvideo";
+                    else videoMime = "video/mp4";
+                    byte[] captionPart = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + caption + "\r\n").getBytes(StandardCharsets.UTF_8);
+                    byte[] videoHeader = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"video\"; filename=\"" + safeFilename + "\"\r\nContent-Type: " + videoMime + "\r\n\r\n").getBytes(StandardCharsets.UTF_8);
+                    byte[] ending = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
+                    connection.setFixedLengthStreamingMode((long) captionPart.length + videoHeader.length + video.length + ending.length);
                     try (OutputStream out = connection.getOutputStream()) {
-                        out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + caption + "\r\n").getBytes(StandardCharsets.UTF_8));
-                        String safeFilename = filename == null ? "leriz-upload.mp4" : filename.replace("\"", "").replace("\r", "").replace("\n", "");
-                        String lowerFilename = safeFilename.toLowerCase(java.util.Locale.ROOT);
-                        String videoMime;
-                        if (lowerFilename.endsWith(".webm")) videoMime = "video/webm";
-                        else if (lowerFilename.endsWith(".mov")) videoMime = "video/quicktime";
-                        else if (lowerFilename.endsWith(".3gp")) videoMime = "video/3gpp";
-                        else if (lowerFilename.endsWith(".m4v")) videoMime = "video/x-m4v";
-                        else if (lowerFilename.endsWith(".mkv")) videoMime = "video/x-matroska";
-                        else if (lowerFilename.endsWith(".avi")) videoMime = "video/x-msvideo";
-                        else videoMime = "video/mp4";
-                        out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"video\"; filename=\"" + safeFilename + "\"\r\nContent-Type: " + videoMime + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                        out.write(captionPart);
+                        out.write(videoHeader);
                         out.write(video);
-                        out.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+                        out.write(ending);
                     }
                     status = connection.getResponseCode();
                     InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
