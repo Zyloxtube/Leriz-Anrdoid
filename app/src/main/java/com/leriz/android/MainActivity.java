@@ -18,6 +18,9 @@ import java.net.URLConnection;
 import java.io.OutputStream;
 import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
 import android.webkit.WebChromeClient;
@@ -125,60 +128,120 @@ public class MainActivity extends Activity {
             }).start();
         }
 
+        private final Object uploadLock = new Object();
+        private final Map<String, File> uploadFiles = new HashMap<>();
+        private final Map<String, FileOutputStream> uploadStreams = new HashMap<>();
+        private final Map<String, String[]> uploadMetadata = new HashMap<>();
+
         @JavascriptInterface
-        public void uploadVideo(String caption, String filename, String base64Data, String token, String callbackId) {
-            new Thread(() -> {
-                int status = 0;
-                String response = "{}";
-                HttpURLConnection connection = null;
-                String boundary = "LerizAndroidBoundary" + System.currentTimeMillis();
-                try {
-                    URL url = new URL(API_BASE + "/api/videos");
-                    connection = (HttpURLConnection) url.openConnection();
-                    connection.setRequestMethod("POST");
-                    connection.setConnectTimeout(30000);
-                    connection.setReadTimeout(120000);
-                    connection.setDoOutput(true);
-                    connection.setRequestProperty("ngrok-skip-browser-warning", "true");
-                    connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
-                    if (token != null && !token.isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + token);
-                    byte[] video = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
-                    String safeFilename = filename == null ? "leriz-upload.mp4" : filename.replace("\"", "").replace("\r", "").replace("\n", "");
-                    String lowerFilename = safeFilename.toLowerCase(java.util.Locale.ROOT);
-                    String videoMime;
-                    if (lowerFilename.endsWith(".webm")) videoMime = "video/webm";
-                    else if (lowerFilename.endsWith(".mov")) videoMime = "video/quicktime";
-                    else if (lowerFilename.endsWith(".3gp")) videoMime = "video/3gpp";
-                    else if (lowerFilename.endsWith(".m4v")) videoMime = "video/x-m4v";
-                    else if (lowerFilename.endsWith(".mkv")) videoMime = "video/x-matroska";
-                    else if (lowerFilename.endsWith(".avi")) videoMime = "video/x-msvideo";
-                    else videoMime = "video/mp4";
-                    byte[] captionPart = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + caption + "\r\n").getBytes(StandardCharsets.UTF_8);
-                    byte[] videoHeader = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"video\"; filename=\"" + safeFilename + "\"\r\nContent-Type: " + videoMime + "\r\n\r\n").getBytes(StandardCharsets.UTF_8);
-                    byte[] ending = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
-                    connection.setFixedLengthStreamingMode((long) captionPart.length + videoHeader.length + video.length + ending.length);
-                    try (OutputStream out = connection.getOutputStream()) {
-                        out.write(captionPart);
-                        out.write(videoHeader);
-                        out.write(video);
-                        out.write(ending);
+        public boolean beginVideoUpload(String callbackId, String filename, String caption, String token) {
+            try {
+                File file = File.createTempFile("leriz-upload-", ".bin", getCacheDir());
+                FileOutputStream stream = new FileOutputStream(file);
+                synchronized (uploadLock) {
+                    uploadFiles.put(callbackId, file);
+                    uploadStreams.put(callbackId, stream);
+                    uploadMetadata.put(callbackId, new String[] {
+                        filename == null ? "leriz-upload.mp4" : filename,
+                        caption == null ? "" : caption,
+                        token == null ? "" : token
+                    });
+                }
+                return true;
+            } catch (Exception e) { return false; }
+        }
+
+        @JavascriptInterface
+        public boolean appendVideoUploadChunk(String callbackId, String base64Chunk) {
+            try {
+                byte[] bytes = android.util.Base64.decode(base64Chunk, android.util.Base64.DEFAULT);
+                synchronized (uploadLock) {
+                    FileOutputStream stream = uploadStreams.get(callbackId);
+                    if (stream == null) return false;
+                    stream.write(bytes);
+                }
+                return true;
+            } catch (Exception e) { return false; }
+        }
+
+        @JavascriptInterface
+        public boolean finishVideoUpload(String callbackId) {
+            final File file;
+            final String[] metadata;
+            try {
+                synchronized (uploadLock) {
+                    FileOutputStream stream = uploadStreams.remove(callbackId);
+                    file = uploadFiles.remove(callbackId);
+                    metadata = uploadMetadata.remove(callbackId);
+                    if (stream == null || file == null || metadata == null) {
+                        if (stream != null) try { stream.close(); } catch (Exception ignored) {}
+                        return false;
                     }
-                    status = connection.getResponseCode();
-                    InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
-                    if (input != null) {
-                        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-                        byte[] chunk = new byte[8192]; int n;
-                        while ((n = input.read(chunk)) != -1) buffer.write(chunk, 0, n);
-                        response = buffer.toString("UTF-8"); input.close();
-                    }
-                } catch (Exception e) {
-                    try { response = new JSONObject().put("error", e.getMessage() == null ? "Upload failed" : e.getMessage()).toString(); } catch (Exception ignored) {}
-                } finally { if (connection != null) connection.disconnect(); }
-                final int finalStatus = status; final String finalResponse = response;
-                runOnUiThread(() -> {
-                    if (webView != null) webView.evaluateJavascript("window.nativeResponse && window.nativeResponse(" + JSONObject.quote(callbackId) + "," + finalStatus + "," + JSONObject.quote(finalResponse) + ")", null);
-                });
-            }).start();
+                    stream.close();
+                }
+                new Thread(() -> sendVideoUpload(file, metadata, callbackId)).start();
+                return true;
+            } catch (Exception e) { return false; }
+        }
+
+        private void sendVideoUpload(File file, String[] metadata, String callbackId) {
+            int status = 0;
+            String response = "{}";
+            HttpURLConnection connection = null;
+            String boundary = "LerizAndroidBoundary" + System.currentTimeMillis();
+            try {
+                String filename = metadata[0].replace("\\", "_").replace("\"", "").replace("\r", "").replace("\n", "");
+                String lowerFilename = filename.toLowerCase(java.util.Locale.ROOT);
+                String videoMime;
+                if (lowerFilename.endsWith(".webm")) videoMime = "video/webm";
+                else if (lowerFilename.endsWith(".mov")) videoMime = "video/quicktime";
+                else if (lowerFilename.endsWith(".3gp")) videoMime = "video/3gpp";
+                else if (lowerFilename.endsWith(".m4v")) videoMime = "video/x-m4v";
+                else if (lowerFilename.endsWith(".mkv")) videoMime = "video/x-matroska";
+                else if (lowerFilename.endsWith(".avi")) videoMime = "video/x-msvideo";
+                else videoMime = "video/mp4";
+                byte[] captionPart = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + metadata[1] + "\r\n").getBytes(StandardCharsets.UTF_8);
+                byte[] videoHeader = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"video\"; filename=\"" + filename + "\"\r\nContent-Type: " + videoMime + "\r\n\r\n").getBytes(StandardCharsets.UTF_8);
+                byte[] ending = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
+                URL url = new URL(API_BASE + "/api/videos");
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(30000);
+                connection.setReadTimeout(180000);
+                connection.setDoOutput(true);
+                connection.setRequestProperty("ngrok-skip-browser-warning", "true");
+                connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+                if (!metadata[2].isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + metadata[2]);
+                connection.setFixedLengthStreamingMode((long) captionPart.length + videoHeader.length + file.length() + ending.length);
+                try (OutputStream out = connection.getOutputStream(); FileInputStream in = new FileInputStream(file)) {
+                    out.write(captionPart);
+                    out.write(videoHeader);
+                    byte[] buffer = new byte[64 * 1024];
+                    int n;
+                    while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+                    out.write(ending);
+                }
+                status = connection.getResponseCode();
+                InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+                if (input != null) {
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    byte[] chunk = new byte[8192];
+                    int n;
+                    while ((n = input.read(chunk)) != -1) buffer.write(chunk, 0, n);
+                    response = buffer.toString("UTF-8");
+                    input.close();
+                }
+            } catch (Exception e) {
+                try { response = new JSONObject().put("error", e.getMessage() == null ? "Upload failed" : e.getMessage()).toString(); } catch (Exception ignored) {}
+            } finally {
+                if (connection != null) connection.disconnect();
+                try { file.delete(); } catch (Exception ignored) {}
+            }
+            final int finalStatus = status;
+            final String finalResponse = response;
+            runOnUiThread(() -> {
+                if (webView != null) webView.evaluateJavascript("window.nativeResponse && window.nativeResponse(" + JSONObject.quote(callbackId) + "," + finalStatus + "," + JSONObject.quote(finalResponse) + ")", null);
+            });
         }
     }
 
