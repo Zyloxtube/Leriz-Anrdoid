@@ -111,7 +111,10 @@ public class MainActivity extends Activity {
                     byte[] video = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
                     try (OutputStream out = connection.getOutputStream()) {
                         out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + caption + "\r\n").getBytes(StandardCharsets.UTF_8));
-                        out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"video\"; filename=\"" + filename.replace("\"", "") + "\"\r\nContent-Type: video/mp4\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                        String safeFilename = filename == null ? "leriz-upload.mp4" : filename.replace("\"", "").replace("\r", "").replace("\n", "");
+                        String lowerFilename = safeFilename.toLowerCase(java.util.Locale.ROOT);
+                        String videoMime = lowerFilename.endsWith(".webm") ? "video/webm" : lowerFilename.endsWith(".mov") ? "video/quicktime" : "video/mp4";
+                        out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"video\"; filename=\"" + safeFilename + "\"\r\nContent-Type: " + videoMime + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
                         out.write(video);
                         out.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
                     }
