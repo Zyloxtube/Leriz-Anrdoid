@@ -2,6 +2,11 @@ package com.leriz.android;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.Manifest;
+import android.content.ContentValues;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.provider.MediaStore;
 import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.ValueCallback;
@@ -29,6 +34,9 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
     private static final int FILE_CHOOSER_REQUEST = 7021;
+    private static final int CAMERA_CAPTURE_REQUEST = 7022;
+    private static final int CAMERA_PERMISSION_REQUEST = 7023;
+    private Uri pendingCaptureUri;
 
 
     private static final String API_BASE = "https://subhyaloid-kallie-bihourly.ngrok-free.dev";
@@ -189,12 +197,23 @@ public class MainActivity extends Activity {
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
                 fileCallback = callback;
+                boolean wantsVideoCapture = params.isCaptureEnabled();
+                if (wantsVideoCapture) {
+                    if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
+                        checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO}, CAMERA_PERMISSION_REQUEST);
+                    } else {
+                        startVideoCapture();
+                    }
+                    return true;
+                }
                 Intent intent = params.createIntent();
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 try {
                     startActivityForResult(intent, FILE_CHOOSER_REQUEST);
                     return true;
                 } catch (Exception e) {
+                    if (fileCallback != null) fileCallback.onReceiveValue(null);
                     fileCallback = null;
                     return false;
                 }
@@ -207,7 +226,17 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == FILE_CHOOSER_REQUEST && fileCallback != null) {
+        if (requestCode == CAMERA_CAPTURE_REQUEST) {
+            Uri captured = resultCode == RESULT_OK ? pendingCaptureUri : null;
+            if (resultCode != RESULT_OK && pendingCaptureUri != null) {
+                try { getContentResolver().delete(pendingCaptureUri, null, null); } catch (Exception ignored) {}
+            }
+            pendingCaptureUri = null;
+            if (fileCallback != null) {
+                fileCallback.onReceiveValue(captured == null ? null : new Uri[]{captured});
+                fileCallback = null;
+            }
+        } else if (requestCode == FILE_CHOOSER_REQUEST && fileCallback != null) {
             Uri[] result = null;
             if (resultCode == RESULT_OK && data != null) {
                 if (data.getClipData() != null) {
