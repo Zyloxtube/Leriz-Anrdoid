@@ -351,7 +351,17 @@ public class MainActivity extends Activity {
             }
         });
         setContentView(webView);
-        webView.loadUrl("file:///android_asset/index.html");
+        try (InputStream asset = getAssets().open("index.html");
+             ByteArrayOutputStream pageBytes = new ByteArrayOutputStream()) {
+            byte[] pageBuffer = new byte[8192];
+            int pageRead;
+            while ((pageRead = asset.read(pageBuffer)) != -1) pageBytes.write(pageBuffer, 0, pageRead);
+            String pageHtml = pageBytes.toString("UTF-8");
+            // A trusted HTTPS base origin is required for WebView getUserMedia camera access.
+            webView.loadDataWithBaseURL("https://leriz.local/", pageHtml, "text/html", "UTF-8", null);
+        } catch (Exception loadError) {
+            webView.loadUrl("file:///android_asset/index.html");
+        }
     }
 
     private void startVideoCapture() {
