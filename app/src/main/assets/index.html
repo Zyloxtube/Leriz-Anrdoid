@@ -267,20 +267,36 @@ async function exportFilteredVideo(file){
   };
  });
 }
+function videoBytesToBase64(buffer){
+ const bytes=new Uint8Array(buffer);let binary='',step=32768;
+ for(let i=0;i<bytes.length;i+=step)binary+=String.fromCharCode.apply(null,bytes.subarray(i,Math.min(i+step,bytes.length)));
+ return btoa(binary);
+}
 async function readBlobBase64(blob){
  if(!blob||typeof blob.size!=='number'||blob.size===0)throw Error('Video chunk is empty or unavailable');
  if(typeof blob.arrayBuffer==='function'){
   try{
-   const buffer=await blob.arrayBuffer(),bytes=new Uint8Array(buffer);
-   let binary='',step=32768;
-   for(let i=0;i<bytes.length;i+=step)binary+=String.fromCharCode.apply(null,bytes.subarray(i,Math.min(i+step,bytes.length)));
-   return btoa(binary);
-  }catch(e){console.warn('arrayBuffer chunk read failed; trying FileReader',e)}
+   const buffer=await blob.arrayBuffer();
+   if(buffer&&buffer.byteLength)return videoBytesToBase64(buffer);
+   throw Error('Blob arrayBuffer returned no bytes');
+  }catch(e){console.warn('arrayBuffer chunk read failed',e)}
  }
+ // Some Android WebViews fail FileReader on picker-backed File.slice() blobs.
+ // Fetching a temporary Blob URL uses the browser's blob store as another read path.
+ let objectUrl=null;
+ try{
+  objectUrl=URL.createObjectURL(blob);
+  const response=await fetch(objectUrl);
+  if(!response.ok)throw Error('Temporary video chunk could not be fetched');
+  const buffer=await response.arrayBuffer();
+  if(buffer&&buffer.byteLength)return videoBytesToBase64(buffer);
+  throw Error('Temporary video chunk returned no bytes');
+ }catch(e){console.warn('Blob URL chunk read failed; trying FileReader',e)}
+ finally{if(objectUrl)try{URL.revokeObjectURL(objectUrl)}catch(e){}}
  return await new Promise(function(resolve,reject){
   let r=new FileReader();
   r.onload=()=>{let result=String(r.result||''),comma=result.indexOf(',');if(comma<0||!result.slice(comma+1))reject(Error('Video chunk was read as empty data'));else resolve(result.slice(comma+1))};
-  r.onerror=()=>reject(Error('Android could not read this video chunk. Re-select the video and try again.'));
+  r.onerror=()=>reject(Error('Android could not read this video chunk through Blob, URL, or FileReader. Re-select the video and try again.'));
   r.onabort=()=>reject(Error('Video chunk reading was interrupted. Try selecting the video again.'));
   try{r.readAsDataURL(blob)}catch(e){reject(Error('Could not open video chunk: '+(e.message||e)))}
  });
