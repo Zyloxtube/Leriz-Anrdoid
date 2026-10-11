@@ -163,7 +163,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public boolean uploadPickedVideo(String callbackId, String filename, String caption, String token) {
+        public boolean uploadPickedVideo(String callbackId, String filename, String title, String caption, String token) {
             final Uri sourceUri;
             final String pickedName;
             synchronized (pickedVideoLock) {
@@ -178,6 +178,7 @@ public class MainActivity extends Activity {
             final String safeName = (filename == null || filename.isEmpty())
                 ? (pickedName == null || pickedName.isEmpty() ? "leriz-upload.mp4" : pickedName)
                 : filename;
+            final String safeTitle = title == null ? "" : title;
             final String safeCaption = caption == null ? "" : caption;
             final String safeToken = token == null ? "" : token;
             new Thread(() -> {
@@ -205,7 +206,7 @@ public class MainActivity extends Activity {
                     });
                     return;
                 }
-                sendVideoUpload(temp, new String[]{safeName, safeCaption, safeToken}, callbackId);
+                sendVideoUpload(temp, new String[]{safeName, safeTitle, safeCaption, safeToken}, callbackId);
             }).start();
             return true;
         }
@@ -216,7 +217,7 @@ public class MainActivity extends Activity {
         private final Map<String, String[]> uploadMetadata = new HashMap<>();
 
         @JavascriptInterface
-        public boolean beginVideoUpload(String callbackId, String filename, String caption, String token) {
+        public boolean beginVideoUpload(String callbackId, String filename, String title, String caption, String token) {
             try {
                 File file = File.createTempFile("leriz-upload-", ".bin", getCacheDir());
                 FileOutputStream stream = new FileOutputStream(file);
@@ -225,6 +226,7 @@ public class MainActivity extends Activity {
                     uploadStreams.put(callbackId, stream);
                     uploadMetadata.put(callbackId, new String[] {
                         filename == null ? "leriz-upload.mp4" : filename,
+                        title == null ? "" : title,
                         caption == null ? "" : caption,
                         token == null ? "" : token
                     });
@@ -282,7 +284,8 @@ public class MainActivity extends Activity {
                 else if (lowerFilename.endsWith(".mkv")) videoMime = "video/x-matroska";
                 else if (lowerFilename.endsWith(".avi")) videoMime = "video/x-msvideo";
                 else videoMime = "video/mp4";
-                byte[] captionPart = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + metadata[1] + "\r\n").getBytes(StandardCharsets.UTF_8);
+                byte[] titlePart = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\n" + metadata[1] + "\r\n").getBytes(StandardCharsets.UTF_8);
+                byte[] captionPart = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + metadata[2] + "\r\n").getBytes(StandardCharsets.UTF_8);
                 byte[] videoHeader = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"video\"; filename=\"" + filename + "\"\r\nContent-Type: " + videoMime + "\r\n\r\n").getBytes(StandardCharsets.UTF_8);
                 byte[] ending = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
                 URL url = new URL(API_BASE + "/api/videos");
@@ -293,9 +296,10 @@ public class MainActivity extends Activity {
                 connection.setDoOutput(true);
                 connection.setRequestProperty("ngrok-skip-browser-warning", "true");
                 connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
-                if (!metadata[2].isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + metadata[2]);
-                connection.setFixedLengthStreamingMode((long) captionPart.length + videoHeader.length + file.length() + ending.length);
+                if (!metadata[3].isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + metadata[3]);
+                connection.setFixedLengthStreamingMode((long) titlePart.length + captionPart.length + videoHeader.length + file.length() + ending.length);
                 try (OutputStream out = connection.getOutputStream(); FileInputStream in = new FileInputStream(file)) {
+                    out.write(titlePart);
                     out.write(captionPart);
                     out.write(videoHeader);
                     byte[] buffer = new byte[64 * 1024];
