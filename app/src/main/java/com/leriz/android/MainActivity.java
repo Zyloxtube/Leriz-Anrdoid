@@ -383,12 +383,10 @@ public class MainActivity extends Activity {
                 fileCallback = callback;
                 boolean wantsVideoCapture = params.isCaptureEnabled();
                 if (wantsVideoCapture) {
-                    if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
-                        checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                        requestPermissions(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO}, CAMERA_PERMISSION_REQUEST);
-                    } else {
-                        startVideoCapture();
-                    }
+                    // Use Android's native camera recorder for capture intents. The system camera
+                    // owns microphone access and records the audio track, avoiding WebView's
+                    // recurring "Could not start audio source" failure.
+                    startVideoCapture();
                     return true;
                 }
                 Intent intent = params.createIntent();
