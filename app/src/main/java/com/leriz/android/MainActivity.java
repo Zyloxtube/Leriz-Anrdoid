@@ -255,9 +255,11 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == CAMERA_PERMISSION_REQUEST) {
-            boolean granted = grantResults.length >= 2 &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED &&
-                grantResults[1] == PackageManager.PERMISSION_GRANTED;
+            // Check the actual current permission state instead of assuming Android
+            // always returns both permission results in a particular order/length.
+            boolean granted =
+                checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
+                checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
             if (granted) startVideoCapture();
             else {
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
@@ -271,8 +273,15 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == CAMERA_CAPTURE_REQUEST) {
-            Uri captured = resultCode == RESULT_OK ? pendingCaptureUri : null;
+            // Some camera apps return their own URI despite EXTRA_OUTPUT. Prefer that
+            // URI when supplied, otherwise use the MediaStore destination we created.
+            Uri captured = null;
+            if (resultCode == RESULT_OK) {
+                captured = data != null && data.getData() != null ? data.getData() : pendingCaptureUri;
+            }
             if (resultCode != RESULT_OK && pendingCaptureUri != null) {
+                try { getContentResolver().delete(pendingCaptureUri, null, null); } catch (Exception ignored) {}
+            } else if (captured != null && pendingCaptureUri != null && !captured.equals(pendingCaptureUri)) {
                 try { getContentResolver().delete(pendingCaptureUri, null, null); } catch (Exception ignored) {}
             }
             pendingCaptureUri = null;
