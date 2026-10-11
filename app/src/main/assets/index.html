@@ -235,9 +235,9 @@ async function exportFilteredVideo(file){
  if(selectedCameraFilter==='None')return file;
  if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)return file;
  return new Promise(function(resolve,reject){
-  let source=document.createElement('video'),canvas=document.createElement('canvas'),ctx=canvas.getContext('2d'),done=false,raf=0,recorder,parts=[];
-  source.muted=true;source.playsInline=true;source.src=URL.createObjectURL(file);
-  function finish(ok,value){if(done)return;done=true;cancelAnimationFrame(raf);try{source.pause();source.src='';URL.revokeObjectURL(source.src)}catch(e){}if(ok)resolve(value);else reject(value)}
+  let source=document.createElement('video'),canvas=document.createElement('canvas'),ctx=canvas.getContext('2d'),done=false,raf=0,recorder,parts=[],sourceURL=URL.createObjectURL(file);
+  source.muted=false;source.playsInline=true;source.src=sourceURL;
+  function finish(ok,value){if(done)return;done=true;cancelAnimationFrame(raf);try{source.pause();source.src='';URL.revokeObjectURL(sourceURL)}catch(e){}if(ok)resolve(value);else reject(value)}
   source.onerror=function(){finish(false,Error('Could not prepare the selected video for its filter'))};
   source.onloadedmetadata=async function(){
    canvas.width=Math.min(1080,source.videoWidth||720);canvas.height=Math.round(canvas.width*(source.videoHeight||1280)/(source.videoWidth||720));
