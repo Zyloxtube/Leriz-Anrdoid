@@ -57,7 +57,33 @@ public class MainActivity extends Activity {
     private String latestPickedVideoName;
 
 
-    private static final String API_BASE = "https://subhyaloid-kallie-bihourly.ngrok-free.dev";
+    private static String API_BASE = "https://parliament-congratulations-casting-manufacturing.trycloudflare.com";
+
+    private void loadAppSettings() {
+        try (InputStream input = getAssets().open("settings.json");
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+            }
+            JSONObject settings = new JSONObject(output.toString(StandardCharsets.UTF_8.name()));
+            String configuredUrl = settings.optString("serverUrl", "").trim();
+            if (configuredUrl.startsWith("https://") || configuredUrl.startsWith("http://")) {
+                API_BASE = configuredUrl.replaceAll("/+$", "");
+            }
+        } catch (Exception e) {
+            android.util.Log.w("LerizConfig", "Could not load settings.json; using default server URL.", e);
+        }
+    }
+
+    private static String apiHost() {
+        try {
+            return new URL(API_BASE).getHost();
+        } catch (Exception e) {
+            return "";
+        }
+    }
 
     public class LerizBridge {
         @JavascriptInterface
@@ -80,6 +106,11 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void releaseRecorderAudioFocus() {
             releaseRecorderAudioFocusInternal();
+        }
+
+        @JavascriptInterface
+        public String getServerUrl() {
+            return API_BASE;
         }
 
         @JavascriptInterface
@@ -426,6 +457,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        loadAppSettings();
         getWindow().setStatusBarColor(Color.rgb(5, 5, 8));
         getWindow().setNavigationBarColor(Color.rgb(5, 5, 8));
         getWindow().getDecorView().setSystemUiVisibility(0);
@@ -446,7 +478,7 @@ public class MainActivity extends Activity {
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
                 if (uri == null || !"https".equalsIgnoreCase(uri.getScheme()) ||
-                    !"subhyaloid-kallie-bihourly.ngrok-free.dev".equalsIgnoreCase(uri.getHost()) ||
+                    !apiHost().equalsIgnoreCase(uri.getHost()) ||
                     !"GET".equalsIgnoreCase(request.getMethod())) {
                     return super.shouldInterceptRequest(view, request);
                 }
