@@ -290,33 +290,44 @@ function applyPreviewFilter(v){if(v)v.style.filter=filterCss(selectedCameraFilte
 function previewSelectedVideo(input){let f=input.files&&input.files[0];if(f)useSelectedVideoFile(f)}
 function useSelectedVideoFile(f){let name=String(f.name||'').toLowerCase(),type=String(f.type||'').toLowerCase(),looksLikeVideo=type.startsWith('video/')||/\.(mp4|mov|m4v|webm|3gp|mkv|avi|mpeg|mpg)$/i.test(name);if(!looksLikeVideo){toast('Please choose a video');let input=$('videoFile');if(input)input.value='';return}selectedVideoFile=f;if(selectedPreviewURL)URL.revokeObjectURL(selectedPreviewURL);selectedPreviewURL=URL.createObjectURL(f);let box=$('createPreview');if(box){box.innerHTML='<video id="selectedPreview" controls playsinline preload="metadata"></video><div class="preview-caption">Video selected · tap Next to edit</div>';let v=$('selectedPreview');v.onerror=function(){let hint=$('createHint');if(hint)hint.textContent='Could not preview this video. Try another format.';toast('This video format could not be previewed on this device')};v.onloadedmetadata=function(){try{v.currentTime=0}catch(e){}applyPreviewFilter(v);let next=$('createNext');if(next)next.disabled=false};v.src=selectedPreviewURL;v.load();v.play().catch(function(){})}let next=$('createNext');if(next)next.disabled=false;let hint=$('createHint');if(hint)hint.textContent=f.name||'Video selected'}
 function openCameraCapture(){
- const input=$('cameraVideoFile');
- if(!input){toast('Camera capture is unavailable. Please reopen Create and try again.');return}
- input.value='';
- // Android WebView handles capture=environment in MainActivity and launches the
- // native camera recorder, which records microphone audio with the video.
- input.click();
+ if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||!window.MediaRecorder){
+  toast('In-app recording is not supported by this Android WebView. Update Android System WebView and try again.');
+  return;
+ }
+ let existing=$('cameraCaptureOverlay');if(existing)existing.remove();
+ document.body.insertAdjacentHTML('beforeend','<div id="cameraCaptureOverlay"><div class="camera-capture-title">Record video</div><div class="camera-live-wrap"><video id="cameraLivePreview" autoplay muted playsinline></video><div class="camera-live-label" id="cameraLiveStatus">Starting camera…</div></div><div class="camera-controls"><button class="camera-control" onclick="flipInAppCamera()">Flip camera</button><button class="camera-record" id="cameraRecordButton" onclick="toggleInAppRecording()"><span></span></button><button class="camera-control" onclick="cancelInAppCamera()">Cancel</button></div><div class="muted" style="text-align:center">Recording stays inside Leriz</div></div>');
+ if(window.LerizNative&&LerizNative.requestCameraPermissions){
+  let id='cam'+Date.now();cameraPermissionRequests[id]=true;LerizNative.requestCameraPermissions(id);
+ }else startInAppCamera();
 }
 function cameraPermissionResult(id,granted){if(!cameraPermissionRequests[id])return;delete cameraPermissionRequests[id];if(!granted){toast('Camera and microphone permissions are required to record');cancelInAppCamera();return}startInAppCamera()}
 async function startInAppCamera(){
  try{
   if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());
   cameraStream=null;cameraAudioAvailable=true;
-  const videoConstraints={facingMode:{ideal:cameraFacing},width:{ideal:1080},height:{ideal:1920}};
-  try{
-   cameraStream=await navigator.mediaDevices.getUserMedia({video:videoConstraints,audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-  }catch(audioError){
-   console.warn('Microphone initialization failed; opening video-only camera',audioError);
-   cameraStream=await navigator.mediaDevices.getUserMedia({video:videoConstraints,audio:false});
-   cameraAudioAvailable=false;
+  if(window.LerizNative&&typeof LerizNative.acquireRecorderAudioFocus==='function'){
+   const focusGranted=LerizNative.acquireRecorderAudioFocus();
+   if(!focusGranted)console.warn('Audio focus not granted; continuing to request microphone');
   }
+  const videoConstraints={facingMode:{ideal:cameraFacing},width:{ideal:1080},height:{ideal:1920}};
+  // Keep audio constraints minimal for Android WebView's capture pipeline.
+  cameraStream=await navigator.mediaDevices.getUserMedia({video:videoConstraints,audio:true});
+  const audioTracks=cameraStream.getAudioTracks().filter(t=>t.readyState==='live'&&t.enabled);
+  if(!audioTracks.length)throw new Error('No live microphone track was returned by Android');
   let v=$('cameraLivePreview');
-  if(!v){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;return}
+  if(!v){
+   cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;
+   if(window.LerizNative&&LerizNative.releaseRecorderAudioFocus)LerizNative.releaseRecorderAudioFocus();
+   return;
+  }
   v.srcObject=cameraStream;v.style.filter=filterCss(selectedCameraFilter);await v.play();
-  let st=$('cameraLiveStatus');
-  if(st)st.textContent=cameraAudioAvailable?'Ready to record':'Ready to record · microphone unavailable';
-  if(!cameraAudioAvailable)toast('Microphone unavailable; you can still record video without sound');
- }catch(e){toast('Could not start in-app camera: '+(e.message||'permission or camera unavailable'));cancelInAppCamera()}
+  let st=$('cameraLiveStatus');if(st)st.textContent='Camera and microphone ready';
+ }catch(e){
+  const message=e&&e.message?e.message:'microphone or camera unavailable';
+  console.error('Leriz recorder camera/microphone initialization failed',e);
+  toast('Could not start Leriz recorder audio: '+message);
+  cancelInAppCamera();
+ }
 }
 async function flipInAppCamera(){cameraFacing=cameraFacing==='environment'?'user':'environment';if(cameraRecorder&&cameraRecorder.state==='recording'){toast('Stop recording before flipping the camera');cameraFacing=cameraFacing==='environment'?'user':'environment';return}await startInAppCamera()}
 function toggleInAppRecording(){
@@ -324,54 +335,47 @@ function toggleInAppRecording(){
  if(cameraRecorder&&cameraRecorder.state==='recording'){
   cameraRecorder.stop();if(btn)btn.classList.remove('recording');if(status)status.textContent='Finishing recording…';return;
  }
- if(!cameraStream){toast('Camera is not ready yet');return}
- if(typeof MediaRecorder==='undefined'){toast('Video recording is not supported by this Android WebView');return}
+ if(!cameraStream){toast('Camera and microphone are not ready yet');return;}
+ if(typeof MediaRecorder==='undefined'){toast('Video recording is not supported by this Android WebView');return;}
+ const audioTracks=cameraStream.getAudioTracks().filter(t=>t.readyState==='live'&&t.enabled);
+ if(!audioTracks.length){toast('Microphone is not active. Reopen the Leriz recorder to enable audio.');return;}
  cameraChunks=[];
- function createRecorder(stream,withAudio){
-  const types=withAudio?['video/webm;codecs=vp8,opus','video/webm']:['video/webm;codecs=vp8','video/webm'];
+ try{
   let mime='';
-  for(const t of types){try{if(MediaRecorder.isTypeSupported(t)){mime=t;break}}catch(e){}}
-  let rec=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:3500000}:{videoBitsPerSecond:3500000});
-  rec.ondataavailable=e=>{if(e.data&&e.data.size)cameraChunks.push(e.data)};
-  rec.onerror=e=>{console.warn('MediaRecorder failed',e);toast('Recording failed. Please try again.');cancelInAppCamera()};
+  const types=['video/webm;codecs=vp8,opus','video/webm'];
+  for(const t of types){try{if(MediaRecorder.isTypeSupported(t)){mime=t;break;}}catch(e){}}
+  const options=mime?{mimeType:mime,videoBitsPerSecond:3500000}:{videoBitsPerSecond:3500000};
+  const rec=new MediaRecorder(cameraStream,options);
+  cameraRecorder=rec;
+  rec.ondataavailable=e=>{if(e.data&&e.data.size)cameraChunks.push(e.data);};
+  rec.onerror=e=>{console.error('Leriz MediaRecorder error',e);toast('Leriz recording failed. Please try again.');cancelInAppCamera();};
   rec.onstop=()=>{
-   let type=rec.mimeType||cameraChunks[0]?.type||'video/webm';
-   let blob=new Blob(cameraChunks,{type:type});
+   const type=rec.mimeType||cameraChunks[0]?.type||'video/webm';
+   const blob=new Blob(cameraChunks,{type:type});
    stopCameraTracks();
    let overlay=$('cameraCaptureOverlay');if(overlay)overlay.remove();
-   if(blob.size<1024){toast('Recording was empty. Please try again.');return}
-   let ext=type.toLowerCase().includes('mp4')?'.mp4':'.webm';
+   if(blob.size<1024){toast('Recording was empty. Please try again.');return;}
+   const ext=type.toLowerCase().includes('mp4')?'.mp4':'.webm';
    useSelectedVideoFile(new File([blob],'Leriz-recording-'+Date.now()+ext,{type:type}));
-   toast('Recording ready · tap Next to edit');
+   toast('Recording ready with microphone audio · tap Next to edit');
   };
-  return rec;
+  rec.start(1000);
+  if(btn)btn.classList.add('recording');
+  if(status)status.textContent='Recording with microphone audio…';
+ }catch(e){
+  cameraRecorder=null;
+  console.error('Could not start Leriz recording with audio',e);
+  if(status)status.textContent='Could not start recording with microphone audio.';
+  toast('Could not start recording with audio: '+(e&&e.message?e.message:'microphone unavailable'));
  }
- try{
-  cameraRecorder=createRecorder(cameraStream,cameraAudioAvailable&&cameraStream.getAudioTracks().length>0);
-  cameraRecorder.start(1000);
- }catch(startError){
-  console.warn('Recorder with microphone failed; retrying without audio',startError);
-  if(cameraRecorder){cameraRecorder.ondataavailable=null;cameraRecorder.onerror=null;cameraRecorder.onstop=null;try{if(cameraRecorder.state!=='inactive')cameraRecorder.stop()}catch(e){}}
-  try{
-   const videoTracks=cameraStream.getVideoTracks();
-   if(!videoTracks.length)throw new Error('Camera video track is unavailable');
-   const videoOnlyStream=new MediaStream(videoTracks);
-   cameraRecorder=createRecorder(videoOnlyStream,false);
-   cameraRecorder.start(1000);
-   cameraAudioAvailable=false;
-   if(status)status.textContent='Recording without microphone audio…';
-   toast('Microphone source failed; recording video without sound');
-  }catch(fallbackError){
-   cameraRecorder=null;
-   toast('Could not start recording: '+(fallbackError.message||startError.message||'camera unavailable'));
-   if(status)status.textContent='Could not start recording. Check camera permission and try again.';
-   return;
-  }
- }
- if(btn)btn.classList.add('recording');
- if(status&&cameraAudioAvailable)status.textContent='Recording…';
 }
-function stopCameraTracks(){if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null}cameraRecorder=null}
+function stopCameraTracks(){
+ if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;}
+ cameraRecorder=null;
+ if(window.LerizNative&&typeof LerizNative.releaseRecorderAudioFocus==='function'){
+  try{LerizNative.releaseRecorderAudioFocus();}catch(e){console.warn('Could not release recorder audio focus',e);}
+ }
+}
 function cancelInAppCamera(){if(cameraRecorder&&cameraRecorder.state==='recording'){cameraRecorder.onstop=null;try{cameraRecorder.stop()}catch(e){}}stopCameraTracks();let overlay=$('cameraCaptureOverlay');if(overlay)overlay.remove()}
 function openVideoEditor(){if(!selectedVideoFile){toast('Record or choose a video first');return}let p=$('pageContent');if(!p){toast('Could not open the editor. Please try again.');return}if(editorPreviewURL)URL.revokeObjectURL(editorPreviewURL);let url=URL.createObjectURL(selectedVideoFile);editorPreviewURL=url;p.innerHTML='<div class="create-top"><button class="secondary" onclick="returnToVideoSelection()">Back</button><div class="page-title">Edit video</div><button class="secondary" onclick="cancelVideoEditor()">Cancel</button></div><div class="editor-shell"><div class="editor-preview"><video id="editorVideo" playsinline controls preload="metadata"></video><div class="editor-overlay-text" id="editorOverlayText"></div></div><input class="editor-field" id="videoTitle" maxlength="120" placeholder="Add a title…"><textarea class="editor-field" id="videoCaption" placeholder="Write a caption…" rows="3"></textarea><div class="muted" id="editorFilterNote">Filter: '+esc(selectedCameraFilter)+' · Preview and export</div><div class="muted">Preview your video, add a title and caption.</div><button class="primary editor-post" id="uploadBtn" onclick="uploadVideo()">Post video <span class="sym">cloud_upload</span></button><div id="uploadStatus" class="muted"></div></div>';let v=$('editorVideo');v.style.filter=filterCss(selectedCameraFilter);v.onerror=function(){let st=$('uploadStatus');if(st)st.textContent='Could not load this video preview. Go back and choose the video again.'};v.onloadedmetadata=function(){let note=$('editorFilterNote');if(note)note.textContent='Filter: '+selectedCameraFilter+' · '+Math.round(v.duration||0)+'s · Preview and export'};v.src=url;v.load();v.play().catch(function(){});}
 function returnToVideoSelection(){if(!selectedVideoFile){go('create');return}let p=$('pageContent');renderCreate(p);if(selectedVideoFile){let box=$('createPreview');box.innerHTML='<video id="selectedPreview" controls playsinline preload="metadata"></video><div class="preview-caption">Video selected · tap Next to edit</div>';let v=$('selectedPreview');v.src=URL.createObjectURL(selectedVideoFile);v.style.filter=filterCss(selectedCameraFilter);v.load();v.play().catch(function(){});$('createNext').disabled=false;$('createHint').textContent=selectedVideoFile.name||'Video selected';document.querySelectorAll('.create-filter').forEach(function(b){b.classList.toggle('active',b.textContent.trim()===selectedCameraFilter)})}}function cancelVideoEditor(){selectedVideoFile=null;go('create')}

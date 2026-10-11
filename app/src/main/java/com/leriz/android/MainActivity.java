@@ -36,6 +36,8 @@ import java.util.Map;
 import java.util.HashMap;
 import android.view.View;
 import android.graphics.Color;
+import android.media.AudioManager;
+import java.util.ArrayList;
 
 public class MainActivity extends Activity {
     private WebView webView;
@@ -45,6 +47,11 @@ public class MainActivity extends Activity {
     private static final int CAMERA_PERMISSION_REQUEST = 7023;
     private Uri pendingCaptureUri;
     private String pendingCameraPermissionCallback;
+
+    private final AudioManager.OnAudioFocusChangeListener recorderAudioFocusListener = focusChange -> {};
+    private int recorderPreviousAudioMode = AudioManager.MODE_NORMAL;
+    private boolean recorderAudioModeCaptured = false;
+    private boolean recorderAudioFocusHeld = false;
     private final Object pickedVideoLock = new Object();
     private Uri latestPickedVideoUri;
     private String latestPickedVideoName;
@@ -53,6 +60,16 @@ public class MainActivity extends Activity {
     private static final String API_BASE = "https://subhyaloid-kallie-bihourly.ngrok-free.dev";
 
     public class LerizBridge {
+        @JavascriptInterface
+        public boolean acquireRecorderAudioFocus() {
+            return acquireRecorderAudioFocusInternal();
+        }
+
+        @JavascriptInterface
+        public void releaseRecorderAudioFocus() {
+            releaseRecorderAudioFocusInternal();
+        }
+
         @JavascriptInterface
         public String getSavedToken() {
             return getSharedPreferences("leriz_auth", MODE_PRIVATE).getString("token", "");
@@ -298,6 +315,42 @@ public class MainActivity extends Activity {
         }
     }
 
+    private boolean acquireRecorderAudioFocusInternal() {
+        try {
+            AudioManager manager = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (manager == null) return false;
+            if (!recorderAudioModeCaptured) {
+                recorderPreviousAudioMode = manager.getMode();
+                recorderAudioModeCaptured = true;
+            }
+            manager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            int result = manager.requestAudioFocus(
+                recorderAudioFocusListener,
+                AudioManager.STREAM_VOICE_CALL,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+            );
+            recorderAudioFocusHeld = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+            return recorderAudioFocusHeld;
+        } catch (Exception e) {
+            android.util.Log.e("LerizRecorder", "Unable to acquire microphone audio focus", e);
+            return false;
+        }
+    }
+
+    private void releaseRecorderAudioFocusInternal() {
+        try {
+            AudioManager manager = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (manager == null) return;
+            if (recorderAudioFocusHeld) manager.abandonAudioFocus(recorderAudioFocusListener);
+            recorderAudioFocusHeld = false;
+            if (recorderAudioModeCaptured) manager.setMode(recorderPreviousAudioMode);
+        } catch (Exception e) {
+            android.util.Log.w("LerizRecorder", "Unable to release microphone audio focus", e);
+        } finally {
+            recorderAudioModeCaptured = false;
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -360,20 +413,31 @@ public class MainActivity extends Activity {
             @Override
             public void onPermissionRequest(PermissionRequest request) {
                 runOnUiThread(() -> {
-                    if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
-                        checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    Uri origin = request.getOrigin();
+                    if (origin == null || !"https".equalsIgnoreCase(origin.getScheme()) ||
+                        !"leriz.local".equalsIgnoreCase(origin.getHost())) {
                         request.deny();
                         return;
                     }
-                    String[] resources = request.getResources();
-                    for (String resource : resources) {
-                        if (!PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource) &&
-                            !PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) {
+                    ArrayList<String> allowed = new ArrayList<>();
+                    for (String resource : request.getResources()) {
+                        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource) &&
+                            checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                            allowed.add(PermissionRequest.RESOURCE_VIDEO_CAPTURE);
+                        } else if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource) &&
+                            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            allowed.add(PermissionRequest.RESOURCE_AUDIO_CAPTURE);
+                        } else {
                             request.deny();
                             return;
                         }
                     }
-                    request.grant(resources);
+                    if (allowed.isEmpty()) {
+                        request.deny();
+                        return;
+                    }
+                    if (allowed.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) acquireRecorderAudioFocusInternal();
+                    request.grant(allowed.toArray(new String[0]));
                 });
             }
 
