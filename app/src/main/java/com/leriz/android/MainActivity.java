@@ -2,6 +2,7 @@ package com.leriz.android;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.Manifest;
 import android.content.ContentValues;
 import android.content.pm.PackageManager;
@@ -42,6 +43,22 @@ public class MainActivity extends Activity {
     private static final String API_BASE = "https://subhyaloid-kallie-bihourly.ngrok-free.dev";
 
     public class LerizBridge {
+        @JavascriptInterface
+        public String getSavedToken() {
+            return getSharedPreferences("leriz_auth", MODE_PRIVATE).getString("token", "");
+        }
+
+        @JavascriptInterface
+        public void saveAuthToken(String token) {
+            getSharedPreferences("leriz_auth", MODE_PRIVATE).edit()
+                .putString("token", token == null ? "" : token).apply();
+        }
+
+        @JavascriptInterface
+        public void clearAuthToken() {
+            getSharedPreferences("leriz_auth", MODE_PRIVATE).edit().remove("token").apply();
+        }
+
         @JavascriptInterface
         public void request(String method, String path, String body, String contentType, String token, String callbackId) {
             new Thread(() -> {
