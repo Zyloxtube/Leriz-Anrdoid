@@ -435,6 +435,8 @@ function renderVideoTextStep(){
  editorPreviewURL=URL.createObjectURL(selectedVideoFile);
  const p=$('pageContent');if(!p)return;
  p.innerHTML='<div class="create-top"><button class="secondary" onclick="returnToVideoSelection()">Cancel</button><div class="page-title">Edit video</div><button class="secondary" onclick="openVideoDetailsStep()">Next</button></div><div class="editor-shell"><div class="editor-preview"><video id="editorVideo" playsinline controls preload="metadata"></video><div class="editor-overlay-text" id="editorOverlayText"></div></div><label class="editor-label" for="overlayTextInput">Text on video</label><textarea class="editor-field" id="overlayTextInput" rows="2" maxlength="180" placeholder="Type text to place on your video…" oninput="editorOverlayText=this.value;let t=$(\'editorOverlayText\');if(t)t.textContent=this.value"></textarea><div class="muted">Your text will be burned into the video. You can still move to the next page to add a title and caption.</div><div class="editor-step-footer"><button class="secondary" onclick="returnToVideoSelection()">Cancel</button><button class="primary" onclick="openVideoDetailsStep()">Next <span class="sym">arrow_forward</span></button></div></div>';
+ const textInput=$('overlayTextInput');if(textInput)textInput.value=editorOverlayText;
+ const overlayNode=$('editorOverlayText');if(overlayNode)overlayNode.textContent=editorOverlayText;
  const v=$('editorVideo');v.style.filter=selectedVideoFilterBaked?'none':filterCss(selectedCameraFilter);v.onerror=function(){toast('Could not load this video preview. Go back and choose it again.')};v.src=editorPreviewURL;v.load();v.play().catch(function(){});
 }
 function openVideoDetailsStep(){
@@ -449,7 +451,9 @@ function openVideoDetailsStep(){
 function returnToVideoSelection(){
  if(editorPreviewTimer){clearInterval(editorPreviewTimer);editorPreviewTimer=null}
  if(!selectedVideoFile){go('create');return}
+ const preservedFile=selectedVideoFile,preservedFilter=selectedCameraFilter,preservedBaked=selectedVideoFilterBaked,preservedText=editorOverlayText;
  const p=$('pageContent');renderCreate(p);
+ selectedVideoFile=preservedFile;selectedCameraFilter=preservedFilter;selectedVideoFilterBaked=preservedBaked;editorOverlayText=preservedText;
  const box=$('createPreview');if(box){box.innerHTML='<video id="selectedPreview" controls playsinline preload="metadata"></video><div class="preview-caption">Video selected · tap Next to edit</div>';let v=$('selectedPreview');v.src=URL.createObjectURL(selectedVideoFile);v.style.filter=selectedVideoFilterBaked?'none':filterCss(selectedCameraFilter);v.load();v.play().catch(function(){})}
  const next=$('createNext');if(next)next.disabled=false;
  const hint=$('createHint');if(hint)hint.textContent=selectedVideoFile.name||'Video selected';
@@ -457,7 +461,7 @@ function returnToVideoSelection(){
 }
 function cancelVideoEditor(){if(editorPreviewTimer){clearInterval(editorPreviewTimer);editorPreviewTimer=null}selectedVideoFile=null;selectedVideoFilterBaked=false;editorOverlayText='';go('create')}
 async function exportFilteredVideo(file){
- if(selectedCameraFilter==='None'&&!editorOverlayText.trim())return file;
+ if((selectedCameraFilter==='None'||selectedVideoFilterBaked)&&!editorOverlayText.trim())return file;
  if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)return file;
  return new Promise(function(resolve,reject){
   let source=document.createElement('video'),canvas=document.createElement('canvas'),ctx=canvas.getContext('2d'),done=false,raf=0,recorder,parts=[],sourceURL=URL.createObjectURL(file);
