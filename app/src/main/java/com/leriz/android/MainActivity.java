@@ -8,6 +8,8 @@ import android.content.ContentValues;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.provider.MediaStore;
+import android.provider.OpenableColumns;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.ValueCallback;
@@ -43,6 +45,9 @@ public class MainActivity extends Activity {
     private static final int CAMERA_PERMISSION_REQUEST = 7023;
     private Uri pendingCaptureUri;
     private String pendingCameraPermissionCallback;
+    private final Object pickedVideoLock = new Object();
+    private Uri latestPickedVideoUri;
+    private String latestPickedVideoName;
 
 
     private static final String API_BASE = "https://subhyaloid-kallie-bihourly.ngrok-free.dev";
@@ -126,6 +131,54 @@ public class MainActivity extends Activity {
                     }
                 });
             }).start();
+        }
+
+        @JavascriptInterface
+        public boolean uploadPickedVideo(String callbackId, String filename, String caption, String token) {
+            final Uri sourceUri;
+            final String pickedName;
+            synchronized (pickedVideoLock) {
+                sourceUri = latestPickedVideoUri;
+                pickedName = latestPickedVideoName;
+                if (sourceUri == null) return false;
+                if (filename != null && !filename.isEmpty() && pickedName != null &&
+                    !pickedName.equalsIgnoreCase(filename)) return false;
+                latestPickedVideoUri = null;
+                latestPickedVideoName = null;
+            }
+            final String safeName = (filename == null || filename.isEmpty())
+                ? (pickedName == null || pickedName.isEmpty() ? "leriz-upload.mp4" : pickedName)
+                : filename;
+            final String safeCaption = caption == null ? "" : caption;
+            final String safeToken = token == null ? "" : token;
+            new Thread(() -> {
+                File temp = null;
+                try (InputStream input = getContentResolver().openInputStream(sourceUri)) {
+                    if (input == null) throw new IllegalStateException("Android could not open the selected video");
+                    temp = File.createTempFile("leriz-picked-video-", ".bin", getCacheDir());
+                    try (FileOutputStream output = new FileOutputStream(temp)) {
+                        byte[] buffer = new byte[64 * 1024];
+                        int n;
+                        while ((n = input.read(buffer)) != -1) output.write(buffer, 0, n);
+                    }
+                    if (temp.length() == 0) throw new IllegalStateException("The selected video is empty");
+                } catch (Exception e) {
+                    if (temp != null) try { temp.delete(); } catch (Exception ignored) {}
+                    final String error = e.getMessage() == null ? "Could not read selected video from Android storage" : e.getMessage();
+                    runOnUiThread(() -> {
+                        if (webView != null) {
+                            String payload;
+                            try { payload = new JSONObject().put("error", error).toString(); }
+                            catch (Exception ignored) { payload = "{}"; }
+                            webView.evaluateJavascript("window.nativeResponse && window.nativeResponse(" +
+                                JSONObject.quote(callbackId) + ",0," + JSONObject.quote(payload) + ")", null);
+                        }
+                    });
+                    return;
+                }
+                sendVideoUpload(temp, new String[]{safeName, safeCaption, safeToken}, callbackId);
+            }).start();
+            return true;
         }
 
         private final Object uploadLock = new Object();
@@ -389,6 +442,23 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void rememberPickedVideo(Uri uri) {
+        String name = null;
+        if (uri != null) {
+            try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    if (index >= 0) name = cursor.getString(index);
+                }
+            } catch (Exception ignored) {}
+            if (name == null || name.isEmpty()) name = uri.getLastPathSegment();
+        }
+        synchronized (pickedVideoLock) {
+            latestPickedVideoUri = uri;
+            latestPickedVideoName = name;
+        }
+    }
+
     private void sendCameraPermissionResult(String callbackId, boolean granted) {
         if (webView == null || callbackId == null) return;
         webView.evaluateJavascript(
@@ -435,6 +505,7 @@ public class MainActivity extends Activity {
                 try { getContentResolver().delete(pendingCaptureUri, null, null); } catch (Exception ignored) {}
             }
             pendingCaptureUri = null;
+            rememberPickedVideo(captured);
             if (fileCallback != null) {
                 fileCallback.onReceiveValue(captured == null ? null : new Uri[]{captured});
                 fileCallback = null;
@@ -450,6 +521,7 @@ public class MainActivity extends Activity {
                     result = new Uri[]{data.getData()};
                 }
             }
+            rememberPickedVideo(result != null && result.length > 0 ? result[0] : null);
             fileCallback.onReceiveValue(result);
             fileCallback = null;
         }
