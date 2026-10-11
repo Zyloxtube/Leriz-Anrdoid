@@ -99,6 +99,62 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public boolean uploadProfileAvatar(String base64, String mimeType, String originalName, String token, String callbackId) {
+            if (base64 == null || base64.isEmpty() || token == null || token.isEmpty()) return false;
+            final String safeMime = ("image/png".equals(mimeType) || "image/webp".equals(mimeType)) ? mimeType : "image/jpeg";
+            final String extension = "image/png".equals(safeMime) ? ".png" : ("image/webp".equals(safeMime) ? ".webp" : ".jpg");
+            final String safeToken = token;
+            final String encoded = base64;
+            final String boundary = "----LerizAvatar" + java.util.UUID.randomUUID().toString().replace("-", "");
+            new Thread(() -> {
+                HttpURLConnection connection = null;
+                int status = 0;
+                String response = "{}";
+                try {
+                    byte[] imageBytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT);
+                    if (imageBytes.length == 0 || imageBytes.length > 5 * 1024 * 1024) throw new IllegalArgumentException("Profile pictures must be 5 MB or smaller");
+                    connection = (HttpURLConnection) new URL(API_BASE + "/api/me/avatar").openConnection();
+                    connection.setRequestMethod("POST");
+                    connection.setConnectTimeout(20000);
+                    connection.setReadTimeout(60000);
+                    connection.setDoOutput(true);
+                    connection.setRequestProperty("ngrok-skip-browser-warning", "true");
+                    connection.setRequestProperty("Accept", "application/json");
+                    connection.setRequestProperty("Authorization", "Bearer " + safeToken);
+                    connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+                    try (OutputStream out = connection.getOutputStream()) {
+                        out.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+                        out.write(("Content-Disposition: form-data; name=\"avatar\"; filename=\"avatar" + extension + "\"\r\n").getBytes(StandardCharsets.UTF_8));
+                        out.write(("Content-Type: " + safeMime + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                        out.write(imageBytes);
+                        out.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+                    }
+                    status = connection.getResponseCode();
+                    InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+                    if (input != null) {
+                        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                        byte[] chunk = new byte[8192];
+                        int n;
+                        while ((n = input.read(chunk)) != -1) buffer.write(chunk, 0, n);
+                        response = buffer.toString("UTF-8");
+                        input.close();
+                    }
+                } catch (Exception e) {
+                    status = status == 0 ? 500 : status;
+                    try { response = new JSONObject().put("ok", false).put("error", e.getMessage() == null ? "Profile picture upload failed" : e.getMessage()).toString(); } catch (Exception ignored) {}
+                } finally {
+                    if (connection != null) connection.disconnect();
+                }
+                final int finalStatus = status;
+                final String finalResponse = response;
+                runOnUiThread(() -> {
+                    if (webView != null) webView.evaluateJavascript("window.nativeResponse && window.nativeResponse(" + JSONObject.quote(callbackId) + "," + finalStatus + "," + JSONObject.quote(finalResponse) + ")", null);
+                });
+            }).start();
+            return true;
+        }
+
+        @JavascriptInterface
         public void requestCameraPermissions(String callbackId) {
             runOnUiThread(() -> {
                 boolean granted =
