@@ -61,6 +61,18 @@ public class MainActivity extends Activity {
 
     public class LerizBridge {
         @JavascriptInterface
+        public void openARFaceFilters() {
+            runOnUiThread(() -> {
+                try {
+                    startActivity(new Intent(MainActivity.this, ARFaceActivity.class));
+                } catch (Exception e) {
+                    android.util.Log.e("LerizAR", "Could not open AR face filters", e);
+                    if (webView != null) webView.evaluateJavascript("window.toast && toast('Could not open native AR filters')", null);
+                }
+            });
+        }
+
+        @JavascriptInterface
         public boolean acquireRecorderAudioFocus() {
             return acquireRecorderAudioFocusInternal();
         }
