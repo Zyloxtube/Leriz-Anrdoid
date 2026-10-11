@@ -226,6 +226,47 @@ public class MainActivity extends Activity {
         webView.loadUrl("file:///android_asset/index.html");
     }
 
+    private void startVideoCapture() {
+        try {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Video.Media.DISPLAY_NAME, "Leriz-" + System.currentTimeMillis() + ".mp4");
+            values.put(MediaStore.Video.Media.MIME_TYPE, "video/mp4");
+            if (Build.VERSION.SDK_INT >= 29) values.put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Leriz");
+            pendingCaptureUri = getContentResolver().insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values);
+            if (pendingCaptureUri == null) throw new IllegalStateException("Could not create video output");
+            Intent intent = new Intent(MediaStore.ACTION_VIDEO_CAPTURE);
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, pendingCaptureUri);
+            intent.putExtra("android.intent.extra.durationLimit", 180);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            intent.setClipData(android.content.ClipData.newRawUri("Leriz video", pendingCaptureUri));
+            startActivityForResult(intent, CAMERA_CAPTURE_REQUEST);
+        } catch (Exception e) {
+            if (pendingCaptureUri != null) {
+                try { getContentResolver().delete(pendingCaptureUri, null, null); } catch (Exception ignored) {}
+            }
+            pendingCaptureUri = null;
+            if (fileCallback != null) fileCallback.onReceiveValue(null);
+            fileCallback = null;
+            if (webView != null) webView.evaluateJavascript("window.toast && toast('Could not open camera. Check camera permissions.')", null);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == CAMERA_PERMISSION_REQUEST) {
+            boolean granted = grantResults.length >= 2 &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED &&
+                grantResults[1] == PackageManager.PERMISSION_GRANTED;
+            if (granted) startVideoCapture();
+            else {
+                if (fileCallback != null) fileCallback.onReceiveValue(null);
+                fileCallback = null;
+                if (webView != null) webView.evaluateJavascript("window.toast && toast('Camera and microphone permissions are needed to record video.')", null);
+            }
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
