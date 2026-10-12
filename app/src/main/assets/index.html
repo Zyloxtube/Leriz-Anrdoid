@@ -322,7 +322,7 @@ function attachVideoStream(v,wanted){
  detachVideoStream(v);v.onerror=null;
  const isHls=/\.m3u8(?:$|\?)/i.test(wanted);
  if(isHls&&window.Hls&&Hls.isSupported()){
-  const player=new Hls({enableWorker:true,lowLatencyMode:false,maxBufferLength:4,maxMaxBufferLength:6,maxBufferSize:12*1024*1024,backBufferLength:0,capLevelToPlayerSize:true,manifestLoadingTimeOut:15000,levelLoadingTimeOut:15000,fragLoadingTimeOut:20000});
+  const player=new Hls({enableWorker:true,lowLatencyMode:false,maxBufferLength:20,maxMaxBufferLength:30,maxBufferSize:48*1024*1024,backBufferLength:8,startFragPrefetch:true,capLevelToPlayerSize:false,manifestLoadingTimeOut:15000,levelLoadingTimeOut:15000,fragLoadingTimeOut:30000});
   hlsPlayers.set(v,player);
   player.on(Hls.Events.ERROR,(_event,data)=>{if(data&&data.fatal){detachVideoStream(v);const fallback=v.dataset.fallbackSrc||'';if(fallback&&fallback!==wanted){v.dataset.activeSrc=fallback;v.src=fallback;v.load()}}});
   player.attachMedia(v);player.on(Hls.Events.MEDIA_ATTACHED,()=>player.loadSource(wanted));v.dataset.activeSrc=wanted;
