@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#050508"><title>Leriz</title>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0" rel="stylesheet">
 <style>
@@ -228,7 +227,7 @@ async function authenticate(){let username=(isSignup?$('signupName').value:$('lo
 function finishLaunch(){const splash=$('launchSplash');if(!splash||splash.classList.contains('hidden'))return;splash.classList.add('fade-out');setTimeout(()=>splash.classList.add('hidden'),500)}
 async function boot(){try{let d=await api('/api/me');currentUser=d.user||d;$('auth').classList.add('hidden');$('app').classList.remove('hidden');go('home');loadFeed();finishLaunch()}catch(e){const message=String(e&&e.message||e||'');const invalidSession=/\b(401|403)\b|unauthori[sz]ed|invalid token|token expired|authentication required/i.test(message);if(invalidSession){token='';localStorage.removeItem('lerizToken');if(window.LerizNative)window.LerizNative.clearAuthToken()}$('auth').classList.remove('hidden');$('app').classList.add('hidden');if(e.message) $('authError').textContent=invalidSession?'Your saved session expired. Please log in again.':'Could not verify your saved login. Check your connection and try again; your saved session has been kept.';finishLaunch()}}
 function setFeed(mode){feedMode=mode;$('forYouTab').classList.toggle('active',mode==='forYou');$('followingTab').classList.toggle('active',mode==='following');loadFeed()}
-function videoURL(v){let u=(String(v.streamType||'').toLowerCase()==='hls'&&(v.hlsURL||v.hlsUrl))||v.videoURL||v.videoUrl||v.url||('/api/videos/'+v.id+'/file');return u.startsWith('http')?u:API+(u.startsWith('/')?u:'/'+u)}function videoFallbackURL(v){let u=v.fileURL||v.fileUrl||('/api/videos/'+encodeURIComponent(v.id)+'/file');return u.startsWith('http')?u:API+(u.startsWith('/')?u:'/'+u)}function thumbnailURL(v){let u=v.thumbnailURL||v.thumbnailUrl||v.thumbnail_url||v.posterURL||v.posterUrl||v.poster||v.previewURL||v.preview_url||('/api/videos/'+encodeURIComponent(v.id)+'/thumbnail');return String(u).startsWith('http')?String(u):API+(String(u).startsWith('/')?String(u):'/'+String(u))}
+function videoURL(v){const u='/api/videos/'+encodeURIComponent(v.id)+'/file';return API+u}function videoFallbackURL(v){return videoURL(v)}function thumbnailURL(v){let u=v.thumbnailURL||v.thumbnailUrl||v.thumbnail_url||v.posterURL||v.posterUrl||v.poster||v.previewURL||v.preview_url||('/api/videos/'+encodeURIComponent(v.id)+'/thumbnail');return String(u).startsWith('http')?String(u):API+(String(u).startsWith('/')?String(u):'/'+String(u))}
 function avatar(u,name){let url=u&&(u.avatarURL||u.avatar_url);return url?'<img class="avatar" src="'+esc((url.startsWith('http')?url:API+(url.startsWith('/')?url:'/'+url))+(url.includes('?')?'&':'?')+'v='+Date.now())+'" onerror="this.outerHTML=\'<span class=avatar>\'+\'\'+\'</span>\'">':'<div class="avatar">'+esc((name||'L').slice(0,1).toUpperCase())+'</div>'}
 function avatarSource(u){let url=u&&(u.avatarURL||u.avatar_url);return url?(url.startsWith('http')?url:API+(url.startsWith('/')?url:'/'+url)):''}
 function showAvatarPreview(url){if(!url)return;const viewer=$('avatarViewer'),image=$('avatarViewerImage');image.src=url;viewer.hidden=false}
@@ -254,6 +253,7 @@ $('profileAvatarPicker').addEventListener('change',event=>{const file=event.targ
 async function loadFeed(){if(page!=='home')return;$('feed').innerHTML='<div class="loading"><span class="spinner"></span>Loading videos…</div>';try{let d=await api('/api/feed?mode='+encodeURIComponent(feedMode)+'&limit=100&offset=0');videos=d.videos||[];if(feedMode==='forYou'){for(let i=videos.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[videos[i],videos[j]]=[videos[j],videos[i]]}}renderFeed()}catch(e){$('feed').innerHTML='<div class="empty"><span class="sym">cloud_off</span><b>Could not load videos</b><p>'+esc(e.message)+'</p><button class="secondary" onclick="loadFeed()">Try again</button></div>'}}
 function followedHandleSet(){try{return new Set((JSON.parse(localStorage.getItem('lerizFollowedHandles')||'[]')||[]).map(x=>String(x).toLowerCase()))}catch(e){return new Set()}}
 function renderFeed(){
+  activeFeedIndex=0;furthestPreparedIndex=-1;
  if(!videos.length){
   $('feed').innerHTML='<div class="empty"><span class="sym">movie</span><b>No videos available</b><p>When creators upload videos, they will appear here.</p><button class="secondary" onclick="go(\'create\')">Upload a video</button></div>';
   return;
@@ -316,197 +316,87 @@ async function registerVideoView(id){
   }else if(page==='profile'){refreshProfileViewCounts()}
  }catch(e){/* Avoid blind retry: a lost response may follow a successful server increment. */}
 }
-let observer;let activeFeedIndex=0;const feedPlaybackPositions=new Map();try{const saved=JSON.parse(sessionStorage.getItem('lerizFeedPlaybackPositions')||'{}');Object.entries(saved).forEach(([id,time])=>feedPlaybackPositions.set(id,Number(time)||0))}catch(e){}function rememberFeedPosition(clip,v){if(!clip||!v||!Number.isFinite(v.currentTime))return;const id=clip.dataset.id;if(!id)return;feedPlaybackPositions.set(id,v.currentTime);try{sessionStorage.setItem('lerizFeedPlaybackPositions',JSON.stringify(Object.fromEntries(feedPlaybackPositions)))}catch(e){}}function restoreFeedPosition(clip,v){const id=clip?.dataset.id,time=feedPlaybackPositions.get(id)||0;if(time>0&&v.readyState>=1){try{if(Math.abs(v.currentTime-time)>0.75)v.currentTime=time}catch(e){}}}const hlsPlayers=new WeakMap();
-function bufferedAhead(v){
- if(!v||!v.buffered)return 0;
- const time=Number(v.currentTime)||0;
- for(let i=0;i<v.buffered.length;i++){
-  const start=v.buffered.start(i),end=v.buffered.end(i);
-  if(start<=time+0.5&&end>=time-0.05)return Math.max(0,end-Math.max(start,time));
- }
- return 0;
+let observer;
+let activeFeedIndex=0;
+let furthestPreparedIndex=-1;
+const feedPlaybackPositions=new Map();
+try{
+ const saved=JSON.parse(sessionStorage.getItem('lerizFeedPlaybackPositions')||'{}');
+ Object.entries(saved).forEach(([id,time])=>feedPlaybackPositions.set(id,Number(time)||0));
+}catch(e){}
+function rememberFeedPosition(clip,v){
+ if(!clip||!v||!Number.isFinite(v.currentTime))return;
+ const id=clip.dataset.id;
+ if(!id)return;
+ feedPlaybackPositions.set(id,v.currentTime);
+ try{sessionStorage.setItem('lerizFeedPlaybackPositions',JSON.stringify(Object.fromEntries(feedPlaybackPositions)))}catch(e){}
 }
-function detachVideoStream(v){
- const player=hlsPlayers.get(v);
- if(player){try{player.destroy()}catch(e){}hlsPlayers.delete(v)}
- delete v.dataset.hlsManifestReady;
- delete v.dataset.hlsWantLoad;
- delete v.dataset.hlsPreloadRequested;
- delete v.dataset.hlsPreloadDone;
- delete v.dataset.hlsActive;
-}
-function hlsPreloadTarget(v){
- const player=hlsPlayers.get(v);
- const details=player&&(player.levels?.[player.currentLevel]?.details||player.levels?.[0]?.details);
- const elementDuration=Number(v&&v.duration);
- const playlistDuration=Number(details&&details.totalduration);
- const duration=Number.isFinite(elementDuration)&&elementDuration>0?elementDuration:playlistDuration;
- return Number.isFinite(duration)&&duration>0?Math.max(.5,Math.min(6,duration-.25)):6;
-}
-function requestHlsPreload(v,targetSeconds=120){
- if(!v||v.dataset.hlsPreloadRequested==='1'||v.dataset.hlsPreloadDone==='1')return;
- const player=hlsPlayers.get(v);
- if(!player)return;
- v.dataset.hlsPreloadRequested='1';
- v.dataset.hlsPreloadTargetSeconds=String(targetSeconds);
- v.dataset.hlsWantLoad='1';
- if(v.dataset.hlsManifestReady==='1')player.startLoad(-1);
-}
-function pauseUpcomingPreload(current){
- const clips=Array.from(document.querySelectorAll('#feed .clip'));
- if(clips.indexOf(current&&current.closest('.clip'))!==activeFeedIndex)return;
- const next=clips[activeFeedIndex+1],v=next&&next.querySelector('video');
- const player=hlsPlayers.get(v);
- if(player&&v.dataset.hlsPreloadRequested==='1'&&v.dataset.hlsPreloadDone!=='1'){
-  player.stopLoad();
-  v.dataset.hlsPausedForCurrent='1';
- }
-}
-function maybePreloadNext(v){
- const clip=v&&v.closest('.clip');
- const clips=Array.from(document.querySelectorAll('#feed .clip'));
- if(!clip||clips.indexOf(clip)!==activeFeedIndex)return;
- const ahead=bufferedAhead(v);
- const duration=Number(v.duration),time=Number(v.currentTime)||0;
- const fullyBuffered=Number.isFinite(duration)&&duration>0&&ahead>=Math.max(0,duration-time-.25);
- const next=clips[activeFeedIndex+1],nextVideo=next&&next.querySelector('video');
- if(!nextVideo)return;
- const nextPlayer=hlsPlayers.get(nextVideo);
- if(ahead<12&&!fullyBuffered){
-  if(nextPlayer&&nextVideo.dataset.hlsPreloadRequested==='1'&&nextVideo.dataset.hlsPreloadDone!=='1'){
-   nextPlayer.stopLoad();
-   nextVideo.dataset.hlsPausedForCurrent='1';
-  }
-  return;
- }
- if(nextPlayer&&nextVideo.dataset.hlsPausedForCurrent==='1'){
-  delete nextVideo.dataset.hlsPausedForCurrent;
-  nextPlayer.startLoad(-1);
- }else{
-  requestHlsPreload(nextVideo,hlsPreloadTarget(nextVideo));
+function restoreFeedPosition(clip,v){
+ const id=clip&&clip.dataset.id;
+ const time=feedPlaybackPositions.get(id)||0;
+ if(time>0&&v.readyState>=1){
+  try{if(Math.abs(v.currentTime-time)>0.75)v.currentTime=time}catch(e){}
  }
 }
 function attachVideoStream(v,wanted,active){
- detachVideoStream(v);v.onerror=null;
- if(v.dataset.feedPriorityListeners!=='1'){
-  v.dataset.feedPriorityListeners='1';
-  const updatePriority=()=>{const clip=v.closest('.clip'),clips=Array.from(document.querySelectorAll('#feed .clip'));if(clips.indexOf(clip)===activeFeedIndex)maybePreloadNext(v)};
-  const pausePriority=()=>pauseUpcomingPreload(v);
-  v.addEventListener('timeupdate',updatePriority);
-  v.addEventListener('playing',updatePriority);
-  v.addEventListener('waiting',pausePriority);
-  v.addEventListener('stalled',pausePriority);
+ if(!v||!wanted)return;
+ if(v.dataset.activeSrc!==wanted){
+  rememberFeedPosition(v.closest('.clip'),v);
+  v.pause();
+  v.dataset.activeSrc=wanted;
+  v.preload='auto';
+  v.addEventListener('loadedmetadata',()=>restoreFeedPosition(v.closest('.clip'),v),{once:true});
+  v.src=wanted;
+  v.load();
  }
- const isHls=/\.m3u8(?:$|\?)/i.test(wanted);
- if(isHls&&window.Hls&&Hls.isSupported()){
-  const player=new Hls({autoStartLoad:false,enableWorker:true,lowLatencyMode:false,maxBufferLength:35,maxMaxBufferLength:50,maxBufferSize:32*1024*1024,backBufferLength:5,startFragPrefetch:false,capLevelToPlayerSize:false,manifestLoadingTimeOut:15000,levelLoadingTimeOut:15000,fragLoadingTimeOut:30000});
-  hlsPlayers.set(v,player);
-  v.dataset.hlsWantLoad=active?'1':'0';
-  player.on(Hls.Events.ERROR,(_event,data)=>{if(data&&data.fatal){detachVideoStream(v);const fallback=v.dataset.fallbackSrc||'';if(fallback&&fallback!==wanted){v.dataset.activeSrc=fallback;v.src=fallback;v.load()}}});
-  player.on(Hls.Events.MANIFEST_PARSED,()=>{v.dataset.hlsManifestReady='1';if(v.dataset.hlsWantLoad==='1')player.startLoad(-1)});
-  player.on(Hls.Events.LEVEL_LOADED,(_event,data)=>{
-   const duration=Number(data&&data.details&&data.details.totalduration);
-   if(Number.isFinite(duration)&&duration>0&&v.dataset.hlsPreloadRequested==='1'){
-    v.dataset.hlsPreloadTargetSeconds=String(Math.max(.5,Math.min(120,duration-.25)));
-   }
-  });
-  player.on(Hls.Events.FRAG_BUFFERED,()=>{
-   const clip=v.closest('.clip');
-   const clips=Array.from(document.querySelectorAll('#feed .clip'));
-   const index=clips.indexOf(clip);
-   if(index===activeFeedIndex){
-    maybePreloadNext(v);
-   }else if(index===activeFeedIndex+1&&v.dataset.hlsPreloadRequested==='1'){
-    const target=Number(v.dataset.hlsPreloadTargetSeconds)||120;
-    const ahead=bufferedAhead(v);
-    if(ahead>=target||(!v.paused&&Number.isFinite(v.duration)&&v.duration>0&&ahead>=v.duration-.25)){
-     v.dataset.hlsPreloadDone='1';
-     v.dataset.hlsWantLoad='0';
-     player.stopLoad();
-    }
-   }
-  });
-  player.attachMedia(v);player.on(Hls.Events.MEDIA_ATTACHED,()=>player.loadSource(wanted));v.dataset.activeSrc=wanted;
- }else{v.dataset.activeSrc=wanted;v.src=wanted;v.load();v.onerror=()=>{const fallback=v.dataset.fallbackSrc||'';if(isHls&&fallback&&fallback!==v.dataset.activeSrc){v.onerror=null;v.dataset.activeSrc=fallback;v.src=fallback;v.load()}}}
-}
-function resumeVideoStream(v){
- const player=hlsPlayers.get(v);
- if(player){
-  v.dataset.hlsActive='1';
-  v.dataset.hlsWantLoad='1';
-  delete v.dataset.hlsPreloadRequested;
-  delete v.dataset.hlsPreloadDone;
-  if(v.dataset.hlsManifestReady==='1')player.startLoad(-1);
-  return true;
- }
- return false;
+ if(!active)v.pause();
 }
 function primeFeedWindow(index){
  const clips=Array.from(document.querySelectorAll('#feed .clip'));
- activeFeedIndex=index;
- for(const {clip,distance} of clips.map((clip,i)=>({clip,distance:i-index})).sort((a,b)=>{
-  const rank=d=>d===0?0:d===1?1:d===2?2:d===-1?3:10+Math.abs(d);
-  return rank(a.distance)-rank(b.distance);
- })){
-  const v=clip.querySelector('video');if(!v)continue;
+ if(!clips.length)return;
+ activeFeedIndex=Math.max(0,Math.min(Number(index)||0,clips.length-1));
+ furthestPreparedIndex=Math.max(furthestPreparedIndex,activeFeedIndex+2);
+ for(let i=0;i<clips.length;i++){
+  const clip=clips[i],v=clip.querySelector('video');
+  if(!v||i>furthestPreparedIndex)continue;
   const wanted=v.dataset.src||'';
   if(v.dataset.poster&&!v.hasAttribute('poster'))v.poster=v.dataset.poster;
-  if(distance===0||distance===1){
-   v.preload='auto';
-   if(wanted&&v.dataset.activeSrc!==wanted){
-    rememberFeedPosition(clip,v);v.pause();
-    delete v.dataset.pendingDirectSrc;
-    attachVideoStream(v,wanted,distance===0);
-    v.onloadedmetadata=()=>restoreFeedPosition(clip,v);
-   }else if(wanted){
-    if(distance===0){
-     if(v.dataset.pendingDirectSrc===wanted){
-      delete v.dataset.pendingDirectSrc;
-      attachVideoStream(v,wanted,true);
-      v.onloadedmetadata=()=>restoreFeedPosition(clip,v);
-     }else resumeVideoStream(v);
-    }
-    restoreFeedPosition(clip,v);
-   }
-   if(distance!==0)v.pause();
-  }else if(distance===2){
-   v.pause();
-   v.preload='none';
-   if(v.dataset.activeSrc||hlsPlayers.get(v)){
-    detachVideoStream(v);
-    if(v.hasAttribute('src')){v.removeAttribute('src');v.load()}
-    delete v.dataset.activeSrc;
-    delete v.dataset.pendingDirectSrc;
-   }
-  }else{
-   rememberFeedPosition(clip,v);v.pause();detachVideoStream(v);
-   if(v.hasAttribute('src')){v.removeAttribute('src');v.load()}
-   v.removeAttribute('poster');
-   delete v.dataset.activeSrc;
-   delete v.dataset.pendingDirectSrc;
-   clip.classList.remove('video-ready','video-metadata-ready','video-buffering');
-  }
+  const isNear=i>=activeFeedIndex&&i<=activeFeedIndex+2;
+  if(wanted&&v.dataset.activeSrc!==wanted)attachVideoStream(v,wanted,i===activeFeedIndex);
+  v.preload=isNear?'auto':'metadata';
+  if(i!==activeFeedIndex)v.pause();
+  restoreFeedPosition(clip,v);
  }
 }
 function observeVideos(){
  if(observer)observer.disconnect();
  const clips=Array.from(document.querySelectorAll('#feed .clip'));
- primeFeedWindow(Math.max(0,activeFeedIndex));
+ if(!clips.length)return;
+ primeFeedWindow(Math.min(activeFeedIndex,clips.length-1));
  observer=new IntersectionObserver(entries=>{
   for(const e of entries){
-   const clip=e.target,v=clip.querySelector('video');if(!v)continue;
+   const clip=e.target,v=clip.querySelector('video');
+   if(!v)continue;
    if(e.isIntersecting&&e.intersectionRatio>.6){
-    const index=clips.indexOf(clip);if(index<0)continue;
+    const index=clips.indexOf(clip);
+    if(index<0)continue;
     playingId=clip.dataset.id;
     if(index!==activeFeedIndex)primeFeedWindow(index);
     restoreFeedPosition(clip,v);
     if(v.dataset.activeSrc||v.getAttribute('src'))v.play().catch(()=>{});
-   }else{rememberFeedPosition(clip,v);v.pause()}
+   }else{
+    rememberFeedPosition(clip,v);
+    v.pause();
+   }
   }
  },{threshold:[.2,.6,.9]});
  clips.forEach(el=>observer.observe(el));
 }
-function togglePlayback(v){if(suppressVideoClick)return;if(v.paused){v.play();v.parentElement.querySelector('.play-indicator').classList.remove('show')}else{v.pause();v.parentElement.querySelector('.play-indicator').classList.add('show')}}
+function togglePlayback(v){
+ if(suppressVideoClick)return;
+ if(v.paused){v.play();v.parentElement.querySelector('.play-indicator').classList.remove('show')}
+ else{v.pause();v.parentElement.querySelector('.play-indicator').classList.add('show')}
+}
 async function likeVideo(id,btn){try{let d=await api('/api/videos/'+encodeURIComponent(id)+'/like','POST',{});let v=videos.find(x=>String(x.id)===id);if(v){v.likedByMe=d.liked??!v.likedByMe;v.likes=d.likes??(Number(v.likes||0)+(v.likedByMe?1:-1))}btn.classList.toggle('liked',!!v?.likedByMe);btn.querySelector('.sym').textContent=v?.likedByMe?'favorite':'favorite_border';btn.querySelector('.sym').classList.toggle('filled',!!v?.likedByMe);btn.lastElementChild.textContent=fmt(v?.likes||d.likes||0)}catch(e){toast(e.message)}}
 async function saveVideo(id,btn){try{let d=await api('/api/videos/'+encodeURIComponent(id)+'/save','POST',{});let v=videos.find(x=>String(x.id)===id);if(v)v.savedByMe=d.saved??!v.savedByMe;btn.classList.toggle('liked',!!v?.savedByMe);btn.querySelector('.sym').textContent=v?.savedByMe?'bookmark':'bookmark_border';btn.querySelector('.sym').classList.toggle('filled',!!v?.savedByMe);toast(v?.savedByMe?'Saved':'Removed from saved')}catch(e){toast(e.message)}}
 async function followUser(username,btn){try{let d=await api('/api/users/'+encodeURIComponent(username)+'/follow','POST',{username});let following=!(d.following===false||d.followed===false);let set=followedHandleSet();if(following)set.add(String(username).toLowerCase());else set.delete(String(username).toLowerCase());try{localStorage.setItem('lerizFollowedHandles',JSON.stringify(Array.from(set)))}catch(e){}let poster=btn?.closest('.creator-poster');if(poster){poster.classList.toggle('following',following);if(following)btn.remove()}else if(btn)btn.textContent=following?'Following':'Follow';toast(following?'Following @'+username:'Unfollowed @'+username)}catch(e){toast(e.message)}}
