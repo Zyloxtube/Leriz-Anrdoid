@@ -352,16 +352,51 @@ function requestHlsPreload(v,targetSeconds=120){
  v.dataset.hlsWantLoad='1';
  if(v.dataset.hlsManifestReady==='1')player.startLoad(-1);
 }
+function pauseUpcomingPreload(current){
+ const clips=Array.from(document.querySelectorAll('#feed .clip'));
+ if(clips.indexOf(current&&current.closest('.clip'))!==activeFeedIndex)return;
+ const next=clips[activeFeedIndex+1],v=next&&next.querySelector('video');
+ const player=hlsPlayers.get(v);
+ if(player&&v.dataset.hlsPreloadRequested==='1'&&v.dataset.hlsPreloadDone!=='1'){
+  player.stopLoad();
+  v.dataset.hlsPausedForCurrent='1';
+ }
+}
 function maybePreloadNext(v){
  const clip=v&&v.closest('.clip');
- if(!clip||bufferedAhead(v)<.8)return;
  const clips=Array.from(document.querySelectorAll('#feed .clip'));
- if(clips.indexOf(clip)!==activeFeedIndex)return;
- const next=clips[activeFeedIndex+1];
- if(next)requestHlsPreload(next.querySelector('video'),hlsPreloadTarget(next.querySelector('video')));
+ if(!clip||clips.indexOf(clip)!==activeFeedIndex)return;
+ const ahead=bufferedAhead(v);
+ const duration=Number(v.duration),time=Number(v.currentTime)||0;
+ const fullyBuffered=Number.isFinite(duration)&&duration>0&&ahead>=Math.max(0,duration-time-.25);
+ const next=clips[activeFeedIndex+1],nextVideo=next&&next.querySelector('video');
+ if(!nextVideo)return;
+ const nextPlayer=hlsPlayers.get(nextVideo);
+ if(ahead<8&&!fullyBuffered){
+  if(nextPlayer&&nextVideo.dataset.hlsPreloadRequested==='1'&&nextVideo.dataset.hlsPreloadDone!=='1'){
+   nextPlayer.stopLoad();
+   nextVideo.dataset.hlsPausedForCurrent='1';
+  }
+  return;
+ }
+ if(nextPlayer&&nextVideo.dataset.hlsPausedForCurrent==='1'){
+  delete nextVideo.dataset.hlsPausedForCurrent;
+  nextPlayer.startLoad(-1);
+ }else{
+  requestHlsPreload(nextVideo,hlsPreloadTarget(nextVideo));
+ }
 }
 function attachVideoStream(v,wanted,active){
  detachVideoStream(v);v.onerror=null;
+ if(v.dataset.feedPriorityListeners!=='1'){
+  v.dataset.feedPriorityListeners='1';
+  const updatePriority=()=>{const clip=v.closest('.clip'),clips=Array.from(document.querySelectorAll('#feed .clip'));if(clips.indexOf(clip)===activeFeedIndex)maybePreloadNext(v)};
+  const pausePriority=()=>pauseUpcomingPreload(v);
+  v.addEventListener('timeupdate',updatePriority);
+  v.addEventListener('playing',updatePriority);
+  v.addEventListener('waiting',pausePriority);
+  v.addEventListener('stalled',pausePriority);
+ }
  const isHls=/\.m3u8(?:$|\?)/i.test(wanted);
  if(isHls&&window.Hls&&Hls.isSupported()){
   const player=new Hls({autoStartLoad:false,enableWorker:true,lowLatencyMode:false,maxBufferLength:90,maxMaxBufferLength:120,maxBufferSize:64*1024*1024,backBufferLength:5,startFragPrefetch:false,capLevelToPlayerSize:false,manifestLoadingTimeOut:15000,levelLoadingTimeOut:15000,fragLoadingTimeOut:30000});
