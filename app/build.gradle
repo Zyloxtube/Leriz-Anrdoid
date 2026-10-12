@@ -4,6 +4,10 @@ plugins {
 
 dependencies {
     implementation 'com.google.ar:core:1.50.0'
+    implementation 'androidx.media3:media3-exoplayer:1.11.0'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.11.0'
+    implementation 'androidx.media3:media3-datasource:1.11.0'
+    implementation 'androidx.media3:media3-database:1.11.0'
 }
 
 android {
