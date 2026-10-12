@@ -56,6 +56,7 @@ import androidx.media3.datasource.cache.SimpleCache;
 import androidx.media3.database.StandaloneDatabaseProvider;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.MediaSource;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.preload.DefaultPreloadManager;
 import androidx.media3.exoplayer.source.preload.TargetPreloadStatusControl;
 
@@ -745,7 +746,7 @@ public class MainActivity extends Activity {
                 };
 
             nativePreloadBuilder = new DefaultPreloadManager.Builder(this, preloadControl);
-            nativePreloadBuilder.setDataSourceFactory(cachedFactory);
+            nativePreloadBuilder.setMediaSourceFactory(new DefaultMediaSourceFactory(cachedFactory));
             nativePreloadManager = nativePreloadBuilder.build();
             nativeFeedPlayer = nativePreloadBuilder.buildExoPlayer();
             nativeFeedPlayer.setRepeatMode(Player.REPEAT_MODE_ONE);
