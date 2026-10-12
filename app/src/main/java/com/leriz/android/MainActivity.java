@@ -57,7 +57,7 @@ public class MainActivity extends Activity {
     private String latestPickedVideoName;
 
 
-    private static String API_BASE = "https://parliament-congratulations-casting-manufacturing.trycloudflare.com";
+    private static String API_BASE = "https://bce23aa947fb67.lhr.life";
 
     private void loadAppSettings() {
         try (InputStream input = getAssets().open("settings.json");
