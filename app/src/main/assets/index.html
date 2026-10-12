@@ -320,7 +320,7 @@ let observer;let activeFeedIndex=0;const feedPlaybackPositions=new Map();try{con
 function detachVideoStream(v){const player=hlsPlayers.get(v);if(player){try{player.destroy()}catch(e){}hlsPlayers.delete(v)}}
 function attachVideoStream(v,wanted){
  detachVideoStream(v);v.onerror=null;
- const isHls=/\\.m3u8(?:$|\\?)/i.test(wanted);
+ const isHls=/\.m3u8(?:$|\?)/i.test(wanted);
  if(isHls&&window.Hls&&Hls.isSupported()){
   const player=new Hls({enableWorker:true,lowLatencyMode:false,maxBufferLength:12,backBufferLength:8,manifestLoadingTimeOut:20000,levelLoadingTimeOut:20000,fragLoadingTimeOut:30000});
   hlsPlayers.set(v,player);
