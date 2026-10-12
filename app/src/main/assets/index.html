@@ -272,7 +272,7 @@ function renderFeed(){
   }
   const titleMarkup=title?'<div class="clip-title">'+esc(title)+'</div>':'';
   const firstFrameURL=thumbnailURL(v);
-  return '<article class="clip" data-id="'+esc(id)+'" ontouchstart="beginVideoHold(event,\''+esc(id)+'\')" ontouchend="endVideoHold()" ontouchmove="moveVideoHold(event)" oncontextmenu="event.preventDefault();showVideoActions(\''+esc(id)+'\');return false"><video data-src="'+esc(videoURL(v))+'" data-fallback-src="'+esc(videoFallbackURL(v))+'"'+(firstFrameURL?' poster="'+esc(firstFrameURL)+'"':'')+' playsinline loop preload="none" onloadedmetadata="this.parentElement.classList.add(\'video-metadata-ready\')" onloadeddata="this.closest(\'.clip\').classList.add(\'video-ready\')" onwaiting="this.closest(\'.clip\').classList.add(\'video-buffering\')" oncanplay="this.closest(\'.clip\').classList.remove(\'video-buffering\')" onplaying="this.closest(\'.clip\').classList.remove(\'video-buffering\');registerVideoView(\''+esc(id)+'\')" onclick="togglePlayback(this)" onended="this.currentTime=0;this.play()"></video><div class="video-loader"><span class="spinner"></span></div><div class="play-indicator"><span class="sym">play_arrow</span></div><div class="clip-content"><div class="creator"><button class="creator-name-avatar" onclick="event.stopPropagation();openCreatorProfile(\''+esc(handle)+'\')" aria-label="Open creator profile">'+avatar(u,name)+'</button><button class="creator-name" onclick="event.stopPropagation();openCreatorProfile(\''+esc(handle)+'\')">'+esc(name)+'</button></div>'+titleMarkup+captionMarkup+'<div class="audio"><span class="sym">music_note</span><button class="creator-handle" onclick="event.stopPropagation();openCreatorProfile(\''+esc(handle)+'\')">original audio · '+esc(handle)+'</button></div></div><div class="actions"><div class="creator-poster '+(isFollowing?'following':'')+'"><button class="creator-poster-open" onclick="event.stopPropagation();openCreatorProfile(\''+esc(handle)+'\')" aria-label="Open creator profile">'+avatar(u,name)+'</button>'+(isMe||isFollowing?'':'<button class="follow-plus" onclick="event.stopPropagation();followUser(\''+esc(handle)+'\',this)" aria-label="Follow creator">+</button>')+'</div><button class="action '+(liked?'liked':'')+'" onclick="likeVideo(\''+esc(id)+'\',this)"><span class="sym '+(liked?'filled':'')+'">'+(liked?'favorite':'favorite_border')+'</span><span>'+fmt(v.likes||0)+'</span></button><button class="action" onclick="openComments(\''+esc(id)+'\')"><span class="sym">chat_bubble</span><span>'+fmt(v.comments||0)+'</span></button><button class="action '+(saved?'liked':'')+'" onclick="saveVideo(\''+esc(id)+'\',this)"><span class="sym '+(saved?'filled':'')+'">'+(saved?'bookmark':'bookmark_border')+'</span><span>Save</span></button><button class="action" onclick="shareVideo(\''+esc(id)+'\')"><span class="sym">share</span><span>Share</span></button></div></article>';
+  return '<article class="clip" data-id="'+esc(id)+'" ontouchstart="beginVideoHold(event,\''+esc(id)+'\')" ontouchend="endVideoHold()" ontouchmove="moveVideoHold(event)" oncontextmenu="event.preventDefault();showVideoActions(\''+esc(id)+'\');return false"><video data-src="'+esc(videoURL(v))+'" data-fallback-src="'+esc(videoFallbackURL(v))+'"'+(firstFrameURL?' data-poster="'+esc(firstFrameURL)+'"':'')+' playsinline loop preload="none" onloadedmetadata="this.parentElement.classList.add(\'video-metadata-ready\')" onloadeddata="this.closest(\'.clip\').classList.add(\'video-ready\')" onwaiting="this.closest(\'.clip\').classList.add(\'video-buffering\')" oncanplay="this.closest(\'.clip\').classList.remove(\'video-buffering\')" onplaying="this.closest(\'.clip\').classList.remove(\'video-buffering\');registerVideoView(\''+esc(id)+'\')" onclick="togglePlayback(this)" onended="this.currentTime=0;this.play()"></video><div class="video-loader"><span class="spinner"></span></div><div class="play-indicator"><span class="sym">play_arrow</span></div><div class="clip-content"><div class="creator"><button class="creator-name-avatar" onclick="event.stopPropagation();openCreatorProfile(\''+esc(handle)+'\')" aria-label="Open creator profile">'+avatar(u,name)+'</button><button class="creator-name" onclick="event.stopPropagation();openCreatorProfile(\''+esc(handle)+'\')">'+esc(name)+'</button></div>'+titleMarkup+captionMarkup+'<div class="audio"><span class="sym">music_note</span><button class="creator-handle" onclick="event.stopPropagation();openCreatorProfile(\''+esc(handle)+'\')">original audio · '+esc(handle)+'</button></div></div><div class="actions"><div class="creator-poster '+(isFollowing?'following':'')+'"><button class="creator-poster-open" onclick="event.stopPropagation();openCreatorProfile(\''+esc(handle)+'\')" aria-label="Open creator profile">'+avatar(u,name)+'</button>'+(isMe||isFollowing?'':'<button class="follow-plus" onclick="event.stopPropagation();followUser(\''+esc(handle)+'\',this)" aria-label="Follow creator">+</button>')+'</div><button class="action '+(liked?'liked':'')+'" onclick="likeVideo(\''+esc(id)+'\',this)"><span class="sym '+(liked?'filled':'')+'">'+(liked?'favorite':'favorite_border')+'</span><span>'+fmt(v.likes||0)+'</span></button><button class="action" onclick="openComments(\''+esc(id)+'\')"><span class="sym">chat_bubble</span><span>'+fmt(v.comments||0)+'</span></button><button class="action '+(saved?'liked':'')+'" onclick="saveVideo(\''+esc(id)+'\',this)"><span class="sym '+(saved?'filled':'')+'">'+(saved?'bookmark':'bookmark_border')+'</span><span>Save</span></button><button class="action" onclick="shareVideo(\''+esc(id)+'\')"><span class="sym">share</span><span>Share</span></button></div></article>';
  }).join('');
  observeVideos();
 }
@@ -317,18 +317,140 @@ async function registerVideoView(id){
  }catch(e){/* Avoid blind retry: a lost response may follow a successful server increment. */}
 }
 let observer;let activeFeedIndex=0;const feedPlaybackPositions=new Map();try{const saved=JSON.parse(sessionStorage.getItem('lerizFeedPlaybackPositions')||'{}');Object.entries(saved).forEach(([id,time])=>feedPlaybackPositions.set(id,Number(time)||0))}catch(e){}function rememberFeedPosition(clip,v){if(!clip||!v||!Number.isFinite(v.currentTime))return;const id=clip.dataset.id;if(!id)return;feedPlaybackPositions.set(id,v.currentTime);try{sessionStorage.setItem('lerizFeedPlaybackPositions',JSON.stringify(Object.fromEntries(feedPlaybackPositions)))}catch(e){}}function restoreFeedPosition(clip,v){const id=clip?.dataset.id,time=feedPlaybackPositions.get(id)||0;if(time>0&&v.readyState>=1){try{if(Math.abs(v.currentTime-time)>0.75)v.currentTime=time}catch(e){}}}const hlsPlayers=new WeakMap();
-function detachVideoStream(v){const player=hlsPlayers.get(v);if(player){try{player.destroy()}catch(e){}hlsPlayers.delete(v)}}
-function attachVideoStream(v,wanted){
+function bufferedAhead(v){
+ if(!v||!v.buffered)return 0;
+ const time=Number(v.currentTime)||0;
+ for(let i=0;i<v.buffered.length;i++){
+  const start=v.buffered.start(i),end=v.buffered.end(i);
+  if(start<=time+0.5&&end>=time-0.05)return Math.max(0,end-Math.max(start,time));
+ }
+ return 0;
+}
+function detachVideoStream(v){
+ const player=hlsPlayers.get(v);
+ if(player){try{player.destroy()}catch(e){}hlsPlayers.delete(v)}
+ delete v.dataset.hlsManifestReady;
+ delete v.dataset.hlsWantLoad;
+ delete v.dataset.hlsPreloadRequested;
+ delete v.dataset.hlsPreloadDone;
+ delete v.dataset.hlsActive;
+}
+function requestHlsPreload(v){
+ if(!v||v.dataset.hlsPreloadRequested==='1'||v.dataset.hlsPreloadDone==='1')return;
+ const player=hlsPlayers.get(v);
+ if(!player)return;
+ v.dataset.hlsPreloadRequested='1';
+ v.dataset.hlsWantLoad='1';
+ if(v.dataset.hlsManifestReady==='1')player.startLoad(-1);
+}
+function maybePreloadNext(v){
+ const clip=v&&v.closest('.clip');
+ if(!clip||bufferedAhead(v)<4)return;
+ const clips=Array.from(document.querySelectorAll('#feed .clip'));
+ if(clips.indexOf(clip)!==activeFeedIndex)return;
+ const next=clips[activeFeedIndex+1];
+ if(next)requestHlsPreload(next.querySelector('video'));
+}
+function attachVideoStream(v,wanted,active){
  detachVideoStream(v);v.onerror=null;
- const isHls=/\.m3u8(?:$|\?)/i.test(wanted);
+ const isHls=/\\.m3u8(?:$|\\?)/i.test(wanted);
  if(isHls&&window.Hls&&Hls.isSupported()){
-  const player=new Hls({enableWorker:true,lowLatencyMode:false,maxBufferLength:20,maxMaxBufferLength:30,maxBufferSize:48*1024*1024,backBufferLength:8,startFragPrefetch:true,capLevelToPlayerSize:false,manifestLoadingTimeOut:15000,levelLoadingTimeOut:15000,fragLoadingTimeOut:30000});
+  const player=new Hls({autoStartLoad:false,enableWorker:true,lowLatencyMode:false,maxBufferLength:20,maxMaxBufferLength:30,maxBufferSize:48*1024*1024,backBufferLength:8,startFragPrefetch:false,capLevelToPlayerSize:false,manifestLoadingTimeOut:15000,levelLoadingTimeOut:15000,fragLoadingTimeOut:30000});
   hlsPlayers.set(v,player);
+  v.dataset.hlsWantLoad=active?'1':'0';
   player.on(Hls.Events.ERROR,(_event,data)=>{if(data&&data.fatal){detachVideoStream(v);const fallback=v.dataset.fallbackSrc||'';if(fallback&&fallback!==wanted){v.dataset.activeSrc=fallback;v.src=fallback;v.load()}}});
+  player.on(Hls.Events.MANIFEST_PARSED,()=>{v.dataset.hlsManifestReady='1';if(v.dataset.hlsWantLoad==='1')player.startLoad(-1)});
+  player.on(Hls.Events.FRAG_BUFFERED,()=>{
+   const clip=v.closest('.clip');
+   const clips=Array.from(document.querySelectorAll('#feed .clip'));
+   const index=clips.indexOf(clip);
+   if(index===activeFeedIndex)maybePreloadNext(v);
+   else if(index===activeFeedIndex+1&&v.dataset.hlsPreloadRequested==='1'){
+    v.dataset.hlsPreloadDone='1';
+    v.dataset.hlsWantLoad='0';
+    player.stopLoad();
+   }
+  });
   player.attachMedia(v);player.on(Hls.Events.MEDIA_ATTACHED,()=>player.loadSource(wanted));v.dataset.activeSrc=wanted;
  }else{v.dataset.activeSrc=wanted;v.src=wanted;v.load();v.onerror=()=>{const fallback=v.dataset.fallbackSrc||'';if(isHls&&fallback&&fallback!==v.dataset.activeSrc){v.onerror=null;v.dataset.activeSrc=fallback;v.src=fallback;v.load()}}}
 }
-function primeFeedWindow(index){const clips=[...document.querySelectorAll('#feed .clip')];activeFeedIndex=index;const ordered=clips.map((clip,i)=>({clip,i,distance:i-index})).sort((a,b)=>{const rank=d=>d===0?0:d===1?1:d===2?2:d===-1?3:10+Math.abs(d);return rank(a.distance)-rank(b.distance)});for(const {clip,i,distance} of ordered){const v=clip.querySelector('video');if(!v)continue;const keep=distance>=0&&distance<=2;if(keep){const wanted=v.dataset.src||'';if(wanted&&v.dataset.activeSrc!==wanted){rememberFeedPosition(clip,v);v.pause();v.preload='auto';attachVideoStream(v,wanted);v.onloadedmetadata=()=>restoreFeedPosition(clip,v)}else if(wanted){v.preload='auto';restoreFeedPosition(clip,v)}if(distance!==0)v.pause()}else{rememberFeedPosition(clip,v);v.pause();detachVideoStream(v);if(v.hasAttribute('src')){v.removeAttribute('src');v.load()}delete v.dataset.activeSrc;clip.classList.remove('video-ready')}}}function observeVideos(){if(observer)observer.disconnect();const clips=[...document.querySelectorAll('#feed .clip')];primeFeedWindow(Math.max(0,activeFeedIndex));observer=new IntersectionObserver(entries=>{for(const e of entries){const clip=e.target,v=clip.querySelector('video');if(!v)continue;if(e.isIntersecting&&e.intersectionRatio>.6){const index=clips.indexOf(clip);if(index<0)continue;playingId=clip.dataset.id;if(index!==activeFeedIndex)primeFeedWindow(index);restoreFeedPosition(clip,v);if(v.dataset.activeSrc||v.getAttribute('src'))v.play().catch(()=>{})}else{rememberFeedPosition(clip,v);v.pause()}}},{threshold:[.2,.6,.9]});clips.forEach(el=>observer.observe(el))}
+function resumeVideoStream(v){
+ const player=hlsPlayers.get(v);
+ if(player){
+  v.dataset.hlsActive='1';
+  v.dataset.hlsWantLoad='1';
+  delete v.dataset.hlsPreloadRequested;
+  delete v.dataset.hlsPreloadDone;
+  if(v.dataset.hlsManifestReady==='1')player.startLoad(-1);
+  return true;
+ }
+ return false;
+}
+function primeFeedWindow(index){
+ const clips=Array.from(document.querySelectorAll('#feed .clip'));
+ activeFeedIndex=index;
+ for(const {clip,i,distance} of clips.map((clip,i)=>({clip,i,distance:i-index})).sort((a,b)=>{
+  const rank=d=>d===0?0:d===1?1:d===2?2:d===-1?3:10+Math.abs(d);
+  return rank(a.distance)-rank(b.distance);
+ })){
+  const v=clip.querySelector('video');if(!v)continue;
+  const keep=distance>=0&&distance<=2;
+  if(keep){
+   const wanted=v.dataset.src||'';
+   if(v.dataset.poster&&!v.hasAttribute('poster'))v.poster=v.dataset.poster;
+   v.preload=distance===0?'auto':'metadata';
+   if(wanted&&v.dataset.activeSrc!==wanted){
+    rememberFeedPosition(clip,v);v.pause();
+    const isHls=/\\.m3u8(?:$|\\?)/i.test(wanted);
+    if(!isHls&&distance!==0){
+     v.dataset.pendingDirectSrc=wanted;
+    }else{
+     delete v.dataset.pendingDirectSrc;
+     attachVideoStream(v,wanted,distance===0);
+     v.onloadedmetadata=()=>restoreFeedPosition(clip,v);
+    }
+   }else if(wanted){
+    if(distance===0){
+     if(v.dataset.pendingDirectSrc===wanted){
+      delete v.dataset.pendingDirectSrc;
+      attachVideoStream(v,wanted,true);
+      v.onloadedmetadata=()=>restoreFeedPosition(clip,v);
+     }else resumeVideoStream(v);
+    }else{
+     const player=hlsPlayers.get(v);
+     if(player&&!v.dataset.hlsPreloadRequested)player.stopLoad();
+    }
+    restoreFeedPosition(clip,v);
+   }
+   if(distance!==0)v.pause();
+  }else{
+   rememberFeedPosition(clip,v);v.pause();detachVideoStream(v);
+   if(v.hasAttribute('src')){v.removeAttribute('src');v.load()}
+   v.removeAttribute('poster');
+   delete v.dataset.activeSrc;
+   delete v.dataset.pendingDirectSrc;
+   clip.classList.remove('video-ready','video-metadata-ready','video-buffering');
+  }
+ }
+}
+function observeVideos(){
+ if(observer)observer.disconnect();
+ const clips=Array.from(document.querySelectorAll('#feed .clip'));
+ primeFeedWindow(Math.max(0,activeFeedIndex));
+ observer=new IntersectionObserver(entries=>{
+  for(const e of entries){
+   const clip=e.target,v=clip.querySelector('video');if(!v)continue;
+   if(e.isIntersecting&&e.intersectionRatio>.6){
+    const index=clips.indexOf(clip);if(index<0)continue;
+    playingId=clip.dataset.id;
+    if(index!==activeFeedIndex)primeFeedWindow(index);
+    restoreFeedPosition(clip,v);
+    if(v.dataset.activeSrc||v.getAttribute('src'))v.play().catch(()=>{});
+   }else{rememberFeedPosition(clip,v);v.pause()}
+  }
+ },{threshold:[.2,.6,.9]});
+ clips.forEach(el=>observer.observe(el));
+}
 function togglePlayback(v){if(suppressVideoClick)return;if(v.paused){v.play();v.parentElement.querySelector('.play-indicator').classList.remove('show')}else{v.pause();v.parentElement.querySelector('.play-indicator').classList.add('show')}}
 async function likeVideo(id,btn){try{let d=await api('/api/videos/'+encodeURIComponent(id)+'/like','POST',{});let v=videos.find(x=>String(x.id)===id);if(v){v.likedByMe=d.liked??!v.likedByMe;v.likes=d.likes??(Number(v.likes||0)+(v.likedByMe?1:-1))}btn.classList.toggle('liked',!!v?.likedByMe);btn.querySelector('.sym').textContent=v?.likedByMe?'favorite':'favorite_border';btn.querySelector('.sym').classList.toggle('filled',!!v?.likedByMe);btn.lastElementChild.textContent=fmt(v?.likes||d.likes||0)}catch(e){toast(e.message)}}
 async function saveVideo(id,btn){try{let d=await api('/api/videos/'+encodeURIComponent(id)+'/save','POST',{});let v=videos.find(x=>String(x.id)===id);if(v)v.savedByMe=d.saved??!v.savedByMe;btn.classList.toggle('liked',!!v?.savedByMe);btn.querySelector('.sym').textContent=v?.savedByMe?'bookmark':'bookmark_border';btn.querySelector('.sym').classList.toggle('filled',!!v?.savedByMe);toast(v?.savedByMe?'Saved':'Removed from saved')}catch(e){toast(e.message)}}
