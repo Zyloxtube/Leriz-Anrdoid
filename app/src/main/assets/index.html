@@ -335,21 +335,22 @@ function detachVideoStream(v){
  delete v.dataset.hlsPreloadDone;
  delete v.dataset.hlsActive;
 }
-function requestHlsPreload(v){
+function requestHlsPreload(v,targetSeconds=2){
  if(!v||v.dataset.hlsPreloadRequested==='1'||v.dataset.hlsPreloadDone==='1')return;
  const player=hlsPlayers.get(v);
  if(!player)return;
  v.dataset.hlsPreloadRequested='1';
+ v.dataset.hlsPreloadTargetSeconds=String(targetSeconds);
  v.dataset.hlsWantLoad='1';
  if(v.dataset.hlsManifestReady==='1')player.startLoad(-1);
 }
 function maybePreloadNext(v){
  const clip=v&&v.closest('.clip');
- if(!clip||bufferedAhead(v)<4)return;
+ if(!clip||bufferedAhead(v)<1.2)return;
  const clips=Array.from(document.querySelectorAll('#feed .clip'));
  if(clips.indexOf(clip)!==activeFeedIndex)return;
  const next=clips[activeFeedIndex+1];
- if(next)requestHlsPreload(next.querySelector('video'));
+ if(next)requestHlsPreload(next.querySelector('video'),4);
 }
 function attachVideoStream(v,wanted,active){
  detachVideoStream(v);v.onerror=null;
@@ -366,9 +367,21 @@ function attachVideoStream(v,wanted,active){
    const index=clips.indexOf(clip);
    if(index===activeFeedIndex)maybePreloadNext(v);
    else if(index===activeFeedIndex+1&&v.dataset.hlsPreloadRequested==='1'){
-    v.dataset.hlsPreloadDone='1';
-    v.dataset.hlsWantLoad='0';
-    player.stopLoad();
+    const target=Number(v.dataset.hlsPreloadTargetSeconds)||4;
+    if(bufferedAhead(v)>=target){
+     v.dataset.hlsPreloadDone='1';
+     v.dataset.hlsWantLoad='0';
+     player.stopLoad();
+     const following=clips[activeFeedIndex+2];
+     if(following)requestHlsPreload(following.querySelector('video'),2);
+    }
+   }else if(index===activeFeedIndex+2&&v.dataset.hlsPreloadRequested==='1'){
+    const target=Number(v.dataset.hlsPreloadTargetSeconds)||2;
+    if(bufferedAhead(v)>=target){
+     v.dataset.hlsPreloadDone='1';
+     v.dataset.hlsWantLoad='0';
+     player.stopLoad();
+    }
    }
   });
   player.attachMedia(v);player.on(Hls.Events.MEDIA_ATTACHED,()=>player.loadSource(wanted));v.dataset.activeSrc=wanted;
@@ -398,17 +411,12 @@ function primeFeedWindow(index){
   if(keep){
    const wanted=v.dataset.src||'';
    if(v.dataset.poster&&!v.hasAttribute('poster'))v.poster=v.dataset.poster;
-   v.preload=distance===0?'auto':'metadata';
+   v.preload=distance<=1?'auto':'metadata';
    if(wanted&&v.dataset.activeSrc!==wanted){
     rememberFeedPosition(clip,v);v.pause();
-    const isHls=/\.m3u8(?:$|\?)/i.test(wanted);
-    if(!isHls&&distance!==0){
-     v.dataset.pendingDirectSrc=wanted;
-    }else{
-     delete v.dataset.pendingDirectSrc;
-     attachVideoStream(v,wanted,distance===0);
-     v.onloadedmetadata=()=>restoreFeedPosition(clip,v);
-    }
+    delete v.dataset.pendingDirectSrc;
+    attachVideoStream(v,wanted,distance===0);
+    v.onloadedmetadata=()=>restoreFeedPosition(clip,v);
    }else if(wanted){
     if(distance===0){
      if(v.dataset.pendingDirectSrc===wanted){
