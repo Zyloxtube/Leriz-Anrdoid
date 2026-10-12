@@ -353,7 +353,7 @@ function maybePreloadNext(v){
 }
 function attachVideoStream(v,wanted,active){
  detachVideoStream(v);v.onerror=null;
- const isHls=/\\.m3u8(?:$|\\?)/i.test(wanted);
+ const isHls=/\.m3u8(?:$|\?)/i.test(wanted);
  if(isHls&&window.Hls&&Hls.isSupported()){
   const player=new Hls({autoStartLoad:false,enableWorker:true,lowLatencyMode:false,maxBufferLength:20,maxMaxBufferLength:30,maxBufferSize:48*1024*1024,backBufferLength:8,startFragPrefetch:false,capLevelToPlayerSize:false,manifestLoadingTimeOut:15000,levelLoadingTimeOut:15000,fragLoadingTimeOut:30000});
   hlsPlayers.set(v,player);
@@ -401,7 +401,7 @@ function primeFeedWindow(index){
    v.preload=distance===0?'auto':'metadata';
    if(wanted&&v.dataset.activeSrc!==wanted){
     rememberFeedPosition(clip,v);v.pause();
-    const isHls=/\\.m3u8(?:$|\\?)/i.test(wanted);
+    const isHls=/\.m3u8(?:$|\?)/i.test(wanted);
     if(!isHls&&distance!==0){
      v.dataset.pendingDirectSrc=wanted;
     }else{
