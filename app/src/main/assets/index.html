@@ -341,7 +341,7 @@ function hlsPreloadTarget(v){
  const elementDuration=Number(v&&v.duration);
  const playlistDuration=Number(details&&details.totalduration);
  const duration=Number.isFinite(elementDuration)&&elementDuration>0?elementDuration:playlistDuration;
- return Number.isFinite(duration)&&duration>0?Math.max(.5,Math.min(120,duration-.25)):120;
+ return Number.isFinite(duration)&&duration>0?Math.max(.5,Math.min(6,duration-.25)):6;
 }
 function requestHlsPreload(v,targetSeconds=120){
  if(!v||v.dataset.hlsPreloadRequested==='1'||v.dataset.hlsPreloadDone==='1')return;
@@ -372,7 +372,7 @@ function maybePreloadNext(v){
  const next=clips[activeFeedIndex+1],nextVideo=next&&next.querySelector('video');
  if(!nextVideo)return;
  const nextPlayer=hlsPlayers.get(nextVideo);
- if(ahead<8&&!fullyBuffered){
+ if(ahead<12&&!fullyBuffered){
   if(nextPlayer&&nextVideo.dataset.hlsPreloadRequested==='1'&&nextVideo.dataset.hlsPreloadDone!=='1'){
    nextPlayer.stopLoad();
    nextVideo.dataset.hlsPausedForCurrent='1';
@@ -399,7 +399,7 @@ function attachVideoStream(v,wanted,active){
  }
  const isHls=/\.m3u8(?:$|\?)/i.test(wanted);
  if(isHls&&window.Hls&&Hls.isSupported()){
-  const player=new Hls({autoStartLoad:false,enableWorker:true,lowLatencyMode:false,maxBufferLength:90,maxMaxBufferLength:120,maxBufferSize:64*1024*1024,backBufferLength:5,startFragPrefetch:false,capLevelToPlayerSize:false,manifestLoadingTimeOut:15000,levelLoadingTimeOut:15000,fragLoadingTimeOut:30000});
+  const player=new Hls({autoStartLoad:false,enableWorker:true,lowLatencyMode:false,maxBufferLength:35,maxMaxBufferLength:50,maxBufferSize:32*1024*1024,backBufferLength:5,startFragPrefetch:false,capLevelToPlayerSize:false,manifestLoadingTimeOut:15000,levelLoadingTimeOut:15000,fragLoadingTimeOut:30000});
   hlsPlayers.set(v,player);
   v.dataset.hlsWantLoad=active?'1':'0';
   player.on(Hls.Events.ERROR,(_event,data)=>{if(data&&data.fatal){detachVideoStream(v);const fallback=v.dataset.fallbackSrc||'';if(fallback&&fallback!==wanted){v.dataset.activeSrc=fallback;v.src=fallback;v.load()}}});
