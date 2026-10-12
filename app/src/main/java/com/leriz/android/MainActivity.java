@@ -25,7 +25,6 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
-import org.json.JSONArray;
 import android.webkit.WebChromeClient;
 import android.webkit.PermissionRequest;
 import android.webkit.WebSettings;
@@ -35,30 +34,10 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import java.util.Map;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.HashSet;
-import java.util.Set;
 import android.view.View;
-import android.view.TextureView;
-import android.widget.FrameLayout;
 import android.graphics.Color;
 import android.media.AudioManager;
 import java.util.ArrayList;
-import androidx.media3.common.MediaItem;
-import androidx.media3.common.MimeTypes;
-import androidx.media3.common.PlaybackException;
-import androidx.media3.common.Player;
-import androidx.media3.common.util.UnstableApi;
-import androidx.media3.datasource.DefaultHttpDataSource;
-import androidx.media3.datasource.cache.CacheDataSource;
-import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor;
-import androidx.media3.datasource.cache.SimpleCache;
-import androidx.media3.database.StandaloneDatabaseProvider;
-import androidx.media3.exoplayer.ExoPlayer;
-import androidx.media3.exoplayer.source.MediaSource;
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
-import androidx.media3.exoplayer.source.preload.DefaultPreloadManager;
-import androidx.media3.exoplayer.source.preload.TargetPreloadStatusControl;
 
 public class MainActivity extends Activity {
     private WebView webView;
@@ -77,46 +56,6 @@ public class MainActivity extends Activity {
     private Uri latestPickedVideoUri;
     private String latestPickedVideoName;
 
-
-    private FrameLayout rootContainer;
-    private TextureView nativeVideoTexture;
-    private ExoPlayer nativeFeedPlayer;
-    private DefaultPreloadManager.Builder nativePreloadBuilder;
-    private DefaultPreloadManager nativePreloadManager;
-    private SimpleCache nativeMediaCache;
-    private final ArrayList<NativeFeedItem> nativeFeedItems = new ArrayList<>();
-    private final LinkedHashMap<String, NativeFeedItem> nativeFeedById = new LinkedHashMap<>();
-    private final Set<String> nativePreloadedIds = new HashSet<>();
-    private final Map<String, Long> nativeFeedPositions = new HashMap<>();
-    private int currentNativeFeedIndex = 0;
-    private String currentNativeFeedId = "";
-    private String activeNativePlaybackUrl = "";
-    private boolean nativeUsingFallback = false;
-    private boolean nativeFeedVisible = false;
-    private boolean nativeWasPlayingBeforePause = false;
-    private boolean nativeLowMemory = false;
-
-    private static final class NativeFeedItem {
-        final String id;
-        final String url;
-        final String fallbackUrl;
-        final int index;
-        final MediaItem mediaItem;
-
-        NativeFeedItem(String id, String url, String fallbackUrl, int index) {
-            this.id = id;
-            this.url = url;
-            this.fallbackUrl = fallbackUrl == null ? "" : fallbackUrl;
-            this.index = index;
-            String lower = url == null ? "" : url.toLowerCase();
-            String mime = lower.contains(".m3u8") ? MimeTypes.APPLICATION_M3U8 : MimeTypes.VIDEO_MP4;
-            this.mediaItem = new MediaItem.Builder()
-                .setMediaId(id)
-                .setUri(url)
-                .setMimeType(mime)
-                .build();
-        }
-    }
 
     private static String API_BASE = "https://bce23aa947fb67.lhr.life";
 
@@ -188,38 +127,6 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void clearAuthToken() {
             getSharedPreferences("leriz_auth", MODE_PRIVATE).edit().remove("token").apply();
-        }
-
-        @JavascriptInterface
-        public boolean isNativeFeedPlaybackAvailable() {
-            return nativeFeedPlayer != null && nativePreloadManager != null && nativeVideoTexture != null;
-        }
-
-        @JavascriptInterface
-        public void setNativeFeedItems(String json) {
-            runOnUiThread(() -> updateNativeFeedItems(json));
-        }
-
-        @JavascriptInterface
-        public void playNativeFeedVideo(String id, int index, String url, String fallbackUrl) {
-            runOnUiThread(() -> startNativeFeedVideo(id, index, url, fallbackUrl));
-        }
-
-        @JavascriptInterface
-        public void toggleNativePlayback() {
-            runOnUiThread(() -> {
-                if (nativeFeedPlayer == null || currentNativeFeedId.isEmpty()) return;
-                if (nativeFeedPlayer.getPlayWhenReady()) {
-                    nativeFeedPlayer.pause();
-                } else {
-                    nativeFeedPlayer.play();
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public void stopNativePlayback() {
-            runOnUiThread(() -> stopNativeFeedPlayback());
         }
 
         @JavascriptInterface
@@ -554,18 +461,8 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(Color.rgb(5, 5, 8));
         getWindow().setNavigationBarColor(Color.rgb(5, 5, 8));
         getWindow().getDecorView().setSystemUiVisibility(0);
-        rootContainer = new FrameLayout(this);
-        nativeVideoTexture = new TextureView(this);
-        nativeVideoTexture.setOpaque(false);
-        nativeVideoTexture.setBackgroundColor(Color.TRANSPARENT);
-        rootContainer.addView(nativeVideoTexture, new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        ));
-        nativeVideoTexture.setVisibility(View.GONE);
-
         webView = new WebView(this);
-        webView.setBackgroundColor(Color.TRANSPARENT);
+        webView.setBackgroundColor(Color.rgb(5, 5, 8));
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setAllowUniversalAccessFromFileURLs(true);
@@ -672,12 +569,7 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        rootContainer.addView(webView, new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        ));
-        setContentView(rootContainer);
-        initializeNativeFeedPlayback();
+        setContentView(webView);
         try (InputStream asset = getAssets().open("index.html");
              ByteArrayOutputStream pageBytes = new ByteArrayOutputStream()) {
             byte[] pageBuffer = new byte[8192];
@@ -689,305 +581,6 @@ public class MainActivity extends Activity {
         } catch (Exception loadError) {
             webView.loadUrl("file:///android_asset/index.html");
         }
-    }
-
-
-    @UnstableApi
-    private void initializeNativeFeedPlayback() {
-        try {
-            File cacheDirectory = new File(getCacheDir(), "leriz_native_video_cache");
-            nativeMediaCache = new SimpleCache(
-                cacheDirectory,
-                new LeastRecentlyUsedCacheEvictor(256L * 1024L * 1024L),
-                new StandaloneDatabaseProvider(getApplicationContext())
-            );
-
-            Map<String, String> headers = new HashMap<>();
-            headers.put("ngrok-skip-browser-warning", "true");
-            headers.put("Accept", "*/*");
-
-            DefaultHttpDataSource.Factory httpFactory = new DefaultHttpDataSource.Factory()
-                .setUserAgent("LerizAndroid/1.0")
-                .setConnectTimeoutMs(12000)
-                .setReadTimeoutMs(30000)
-                .setAllowCrossProtocolRedirects(true)
-                .setDefaultRequestProperties(headers);
-
-            CacheDataSource.Factory cachedFactory = new CacheDataSource.Factory()
-                .setCache(nativeMediaCache)
-                .setUpstreamDataSourceFactory(httpFactory)
-                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR);
-
-            TargetPreloadStatusControl<Integer, DefaultPreloadManager.PreloadStatus> preloadControl =
-                new TargetPreloadStatusControl<Integer, DefaultPreloadManager.PreloadStatus>() {
-                    @Override
-                    public DefaultPreloadManager.PreloadStatus getTargetPreloadStatus(Integer rankingData) {
-                        int distance = rankingData - currentNativeFeedIndex;
-                        if (distance == 1) {
-                            return DefaultPreloadManager.PreloadStatus.specifiedRangeLoaded(
-                                nativeLowMemory ? 800L : 3500L
-                            );
-                        }
-                        if (distance == -1) {
-                            return DefaultPreloadManager.PreloadStatus.specifiedRangeLoaded(
-                                nativeLowMemory ? 400L : 1500L
-                            );
-                        }
-                        if (Math.abs(distance) == 2) {
-                            return nativeLowMemory
-                                ? DefaultPreloadManager.PreloadStatus.PRELOAD_STATUS_SOURCE_PREPARED
-                                : DefaultPreloadManager.PreloadStatus.PRELOAD_STATUS_TRACKS_SELECTED;
-                        }
-                        if (Math.abs(distance) <= 3) {
-                            return DefaultPreloadManager.PreloadStatus.PRELOAD_STATUS_SOURCE_PREPARED;
-                        }
-                        return DefaultPreloadManager.PreloadStatus.PRELOAD_STATUS_NOT_PRELOADED;
-                    }
-                };
-
-            nativePreloadBuilder = new DefaultPreloadManager.Builder(this, preloadControl);
-            nativePreloadBuilder.setMediaSourceFactory(new DefaultMediaSourceFactory(cachedFactory));
-            nativePreloadManager = nativePreloadBuilder.build();
-            nativeFeedPlayer = nativePreloadBuilder.buildExoPlayer();
-            nativeFeedPlayer.setRepeatMode(Player.REPEAT_MODE_ONE);
-            nativeFeedPlayer.setVideoTextureView(nativeVideoTexture);
-
-            nativeFeedPlayer.addListener(new Player.Listener() {
-                @Override
-                public void onPlaybackStateChanged(int playbackState) {
-                    if (currentNativeFeedId.isEmpty()) return;
-                    if (playbackState == Player.STATE_BUFFERING) {
-                        notifyNativeFeedState("buffering");
-                    } else if (playbackState == Player.STATE_READY) {
-                        notifyNativeFeedState("ready");
-                    }
-                }
-
-                @Override
-                public void onIsPlayingChanged(boolean isPlaying) {
-                    if (currentNativeFeedId.isEmpty()) return;
-                    if (isPlaying) {
-                        notifyNativeFeedState("playing");
-                    } else if (!nativeFeedPlayer.getPlayWhenReady()
-                            && nativeFeedPlayer.getPlaybackState() == Player.STATE_READY) {
-                        notifyNativeFeedState("paused");
-                    }
-                }
-
-                @Override
-                public void onRenderedFirstFrame() {
-                    if (!currentNativeFeedId.isEmpty()) {
-                        notifyNativeFeedState("firstFrame");
-                    }
-                }
-
-                @Override
-                public void onPlayerError(PlaybackException error) {
-                    NativeFeedItem active = nativeFeedById.get(currentNativeFeedId);
-                    if (active != null && !nativeUsingFallback
-                            && !active.fallbackUrl.isEmpty()
-                            && !active.fallbackUrl.equals(activeNativePlaybackUrl)) {
-                        nativeUsingFallback = true;
-                        activeNativePlaybackUrl = active.fallbackUrl;
-                        notifyNativeFeedState("buffering");
-                        MediaItem fallback = new NativeFeedItem(
-                            active.id, active.fallbackUrl, "", active.index
-                        ).mediaItem;
-                        nativeFeedPlayer.setMediaItem(fallback);
-                        nativeFeedPlayer.prepare();
-                        nativeFeedPlayer.setPlayWhenReady(true);
-                        return;
-                    }
-                    android.util.Log.w("LerizPlayback", "Native playback failed for "
-                        + currentNativeFeedId + ": " + error.getMessage());
-                    notifyNativeFeedState("error");
-                }
-            });
-        } catch (Exception error) {
-            android.util.Log.e("LerizPlayback", "Native feed playback could not initialize.", error);
-            if (nativeFeedPlayer != null) {
-                try { nativeFeedPlayer.release(); } catch (Exception ignored) {}
-                nativeFeedPlayer = null;
-            }
-            if (nativePreloadManager != null) {
-                try { nativePreloadManager.release(); } catch (Exception ignored) {}
-                nativePreloadManager = null;
-            }
-            if (nativeMediaCache != null) {
-                try { nativeMediaCache.release(); } catch (Exception ignored) {}
-                nativeMediaCache = null;
-            }
-        }
-    }
-
-    private void notifyNativeFeedState(String state) {
-        if (webView == null || currentNativeFeedId.isEmpty()) return;
-        final String idJson = JSONObject.quote(currentNativeFeedId);
-        final String stateJson = JSONObject.quote(state);
-        webView.post(() -> {
-            if (webView != null) {
-                webView.evaluateJavascript(
-                    "window.onNativeFeedState && window.onNativeFeedState(" + idJson + "," + stateJson + ")",
-                    null
-                );
-            }
-        });
-    }
-
-    @UnstableApi
-    private void updateNativeFeedItems(String json) {
-        if (nativePreloadManager == null || nativeFeedPlayer == null) return;
-        String previousId = currentNativeFeedId;
-        currentNativeFeedId = "";
-        activeNativePlaybackUrl = "";
-        nativeFeedVisible = false;
-        nativeVideoTexture.setVisibility(View.GONE);
-        nativeFeedPlayer.pause();
-        nativeFeedPlayer.clearMediaItems();
-        nativePreloadManager.reset();
-        nativePreloadedIds.clear();
-        nativeFeedItems.clear();
-        nativeFeedById.clear();
-
-        try {
-            JSONArray array = new JSONArray(json == null || json.isEmpty() ? "[]" : json);
-            for (int i = 0; i < array.length(); i++) {
-                JSONObject object = array.optJSONObject(i);
-                if (object == null) continue;
-                String id = object.optString("id", "");
-                String url = object.optString("url", "");
-                String fallback = object.optString("fallback", "");
-                if (id.isEmpty() || url.isEmpty() || nativeFeedById.containsKey(id)) continue;
-                NativeFeedItem item = new NativeFeedItem(id, url, fallback, nativeFeedItems.size());
-                nativeFeedItems.add(item);
-                nativeFeedById.put(id, item);
-            }
-        } catch (Exception error) {
-            android.util.Log.w("LerizPlayback", "Invalid native feed list.", error);
-        }
-
-        currentNativeFeedIndex = 0;
-        if (!previousId.isEmpty()) {
-            NativeFeedItem previous = nativeFeedById.get(previousId);
-            if (previous != null) currentNativeFeedIndex = previous.index;
-        }
-        ensureNativePreloadWindow();
-    }
-
-    @UnstableApi
-    private void ensureNativePreloadWindow() {
-        if (nativePreloadManager == null || nativeFeedItems.isEmpty()) return;
-        currentNativeFeedIndex = Math.max(0, Math.min(
-            currentNativeFeedIndex, nativeFeedItems.size() - 1
-        ));
-        nativePreloadManager.setCurrentPlayingIndex(currentNativeFeedIndex);
-        int first = Math.max(0, currentNativeFeedIndex - 2);
-        int last = Math.min(nativeFeedItems.size() - 1, currentNativeFeedIndex + 3);
-        for (int i = first; i <= last; i++) {
-            NativeFeedItem item = nativeFeedItems.get(i);
-            if (nativePreloadedIds.add(item.id)) {
-                nativePreloadManager.add(item.mediaItem, item.index);
-            }
-        }
-        nativePreloadManager.invalidate();
-    }
-
-    @UnstableApi
-    private void pruneNativePreloadWindow() {
-        if (nativePreloadManager == null) return;
-        for (String id : new ArrayList<>(nativePreloadedIds)) {
-            NativeFeedItem item = nativeFeedById.get(id);
-            if (item == null || (Math.abs(item.index - currentNativeFeedIndex) > 3
-                    && !id.equals(currentNativeFeedId))) {
-                if (item != null) nativePreloadManager.remove(item.mediaItem);
-                nativePreloadedIds.remove(id);
-            }
-        }
-        nativePreloadManager.invalidate();
-    }
-
-    @UnstableApi
-    private void startNativeFeedVideo(String id, int requestedIndex, String url, String fallbackUrl) {
-        if (nativeFeedPlayer == null || nativePreloadManager == null || id == null || id.isEmpty()) return;
-        NativeFeedItem item = nativeFeedById.get(id);
-        if (item == null) {
-            if (url == null || url.isEmpty()) return;
-            int safeIndex = Math.max(0, Math.min(requestedIndex, nativeFeedItems.size()));
-            item = new NativeFeedItem(id, url, fallbackUrl, safeIndex);
-            nativeFeedItems.add(safeIndex, item);
-            nativeFeedById.clear();
-            for (int i = 0; i < nativeFeedItems.size(); i++) {
-                NativeFeedItem old = nativeFeedItems.get(i);
-                NativeFeedItem replacement = new NativeFeedItem(old.id, old.url, old.fallbackUrl, i);
-                nativeFeedItems.set(i, replacement);
-                nativeFeedById.put(replacement.id, replacement);
-            }
-            item = nativeFeedById.get(id);
-        }
-
-        if (id.equals(currentNativeFeedId)) {
-            nativeVideoTexture.setVisibility(View.VISIBLE);
-            nativeFeedVisible = true;
-            return; // Do not undo a user-initiated pause on repeated intersection events.
-        }
-
-        if (!currentNativeFeedId.isEmpty()) {
-            nativeFeedPositions.put(currentNativeFeedId, Math.max(0L, nativeFeedPlayer.getCurrentPosition()));
-        }
-
-        currentNativeFeedId = id;
-        currentNativeFeedIndex = item.index;
-        activeNativePlaybackUrl = item.url;
-        nativeUsingFallback = false;
-        nativeFeedVisible = true;
-        nativeVideoTexture.setVisibility(View.VISIBLE);
-
-        nativeFeedPlayer.setPlayWhenReady(false);
-        ensureNativePreloadWindow();
-
-        MediaSource preloadedSource = nativePreloadManager.getMediaSource(item.mediaItem);
-        if (preloadedSource != null) {
-            nativeFeedPlayer.setMediaSource(preloadedSource);
-        } else {
-            nativeFeedPlayer.setMediaItem(item.mediaItem);
-        }
-
-        Long savedPosition = nativeFeedPositions.get(id);
-        if (savedPosition != null && savedPosition > 0) {
-            nativeFeedPlayer.seekTo(savedPosition);
-        } else {
-            nativeFeedPlayer.seekTo(0);
-        }
-        nativeFeedPlayer.prepare();
-        nativeFeedPlayer.setPlayWhenReady(true);
-        pruneNativePreloadWindow();
-    }
-
-    private void stopNativeFeedPlayback() {
-        nativeFeedVisible = false;
-        nativeWasPlayingBeforePause = false;
-        if (nativeFeedPlayer != null) {
-            if (!currentNativeFeedId.isEmpty()) {
-                nativeFeedPositions.put(currentNativeFeedId, Math.max(0L, nativeFeedPlayer.getCurrentPosition()));
-            }
-            currentNativeFeedId = "";
-            activeNativePlaybackUrl = "";
-            try {
-                nativeFeedPlayer.pause();
-                nativeFeedPlayer.clearMediaItems();
-            } catch (Exception error) {
-                android.util.Log.w("LerizPlayback", "Could not stop native feed player cleanly.", error);
-            }
-        }
-        if (nativePreloadManager != null) {
-            try {
-                nativePreloadManager.reset();
-                nativePreloadedIds.clear();
-            } catch (Exception error) {
-                android.util.Log.w("LerizPlayback", "Could not reset native preloads.", error);
-            }
-        }
-        if (nativeVideoTexture != null) nativeVideoTexture.setVisibility(View.GONE);
     }
 
     private void startVideoCapture() {
@@ -1098,60 +691,6 @@ public class MainActivity extends Activity {
             fileCallback.onReceiveValue(result);
             fileCallback = null;
         }
-    }
-
-    @Override
-    protected void onPause() {
-        if (nativeFeedPlayer != null) {
-            nativeWasPlayingBeforePause = nativeFeedPlayer.getPlayWhenReady();
-            if (!currentNativeFeedId.isEmpty()) {
-                nativeFeedPositions.put(currentNativeFeedId, Math.max(0L, nativeFeedPlayer.getCurrentPosition()));
-            }
-            nativeFeedPlayer.pause();
-        }
-        super.onPause();
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (nativeWasPlayingBeforePause && nativeFeedVisible
-                && nativeFeedPlayer != null && !currentNativeFeedId.isEmpty()) {
-            nativeFeedPlayer.play();
-        }
-        nativeWasPlayingBeforePause = false;
-    }
-
-    @Override
-    public void onTrimMemory(int level) {
-        super.onTrimMemory(level);
-        nativeLowMemory = level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW;
-        if (nativePreloadManager != null) {
-            try { nativePreloadManager.invalidate(); } catch (Exception ignored) {}
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        nativeFeedVisible = false;
-        if (nativeFeedPlayer != null) {
-            try { nativeFeedPlayer.release(); } catch (Exception ignored) {}
-            nativeFeedPlayer = null;
-        }
-        if (nativePreloadManager != null) {
-            try { nativePreloadManager.release(); } catch (Exception ignored) {}
-            nativePreloadManager = null;
-        }
-        if (nativeMediaCache != null) {
-            try { nativeMediaCache.release(); } catch (Exception ignored) {}
-            nativeMediaCache = null;
-        }
-        if (webView != null) {
-            try { webView.removeJavascriptInterface("LerizNative"); } catch (Exception ignored) {}
-            try { webView.destroy(); } catch (Exception ignored) {}
-            webView = null;
-        }
-        super.onDestroy();
     }
 
     @Override
