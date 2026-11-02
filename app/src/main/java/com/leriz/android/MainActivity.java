@@ -57,7 +57,7 @@ public class MainActivity extends Activity {
     private String latestPickedVideoName;
 
 
-    private static String API_BASE = "https://d7e626bf2e085a.lhr.life";
+    private static String API_BASE = "https://tiger-9064.portbuddy.dev";
 
     private void loadAppSettings() {
         try (InputStream input = getAssets().open("settings.json");
