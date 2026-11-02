@@ -359,9 +359,9 @@ public class MainActivity extends Activity {
             int status = 0;
             String response = "{}";
             HttpURLConnection connection = null;
-            String boundary = "LerizAndroidBoundary" + System.currentTimeMillis();
             try {
-                String filename = metadata[0].replace("\\", "_").replace("\"", "").replace("\r", "").replace("\n", "");
+                String filename = metadata[0] == null ? "leriz-upload.mp4" : metadata[0];
+                filename = filename.replace("\\", "_").replace("\"", "").replace("\r", "").replace("\n", "");
                 String lowerFilename = filename.toLowerCase(java.util.Locale.ROOT);
                 String videoMime;
                 if (lowerFilename.endsWith(".webm")) videoMime = "video/webm";
@@ -371,29 +371,39 @@ public class MainActivity extends Activity {
                 else if (lowerFilename.endsWith(".mkv")) videoMime = "video/x-matroska";
                 else if (lowerFilename.endsWith(".avi")) videoMime = "video/x-msvideo";
                 else videoMime = "video/mp4";
-                byte[] titlePart = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\n" + metadata[1] + "\r\n").getBytes(StandardCharsets.UTF_8);
-                byte[] captionPart = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n" + metadata[2] + "\r\n").getBytes(StandardCharsets.UTF_8);
-                byte[] videoHeader = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"video\"; filename=\"" + filename + "\"\r\nContent-Type: " + videoMime + "\r\n\r\n").getBytes(StandardCharsets.UTF_8);
-                byte[] ending = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
-                URL url = new URL(API_BASE + "/api/videos");
+
+                if (!file.isFile() || file.length() <= 0) {
+                    throw new IllegalStateException("The selected video is empty or unavailable");
+                }
+
+                // Portbuddy drops multipart request bodies. Send the video bytes directly,
+                // and put text metadata in the URL query (UTF-8 form encoding).
+                String query = "filename=" + java.net.URLEncoder.encode(filename, "UTF-8")
+                    + "&title=" + java.net.URLEncoder.encode(metadata[1] == null ? "" : metadata[1], "UTF-8")
+                    + "&caption=" + java.net.URLEncoder.encode(metadata[2] == null ? "" : metadata[2], "UTF-8");
+                URL url = new URL(API_BASE + "/api/videos?" + query);
                 connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("POST");
                 connection.setConnectTimeout(30000);
-                connection.setReadTimeout(180000);
+                connection.setReadTimeout(7200000);
                 connection.setDoOutput(true);
                 connection.setRequestProperty("ngrok-skip-browser-warning", "true");
-                connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
-                if (!metadata[3].isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + metadata[3]);
-                connection.setFixedLengthStreamingMode((long) titlePart.length + captionPart.length + videoHeader.length + file.length() + ending.length);
-                try (OutputStream out = connection.getOutputStream(); FileInputStream in = new FileInputStream(file)) {
-                    out.write(titlePart);
-                    out.write(captionPart);
-                    out.write(videoHeader);
+                connection.setRequestProperty("Content-Type", "application/octet-stream");
+                connection.setRequestProperty("X-Video-Content-Type", videoMime);
+                connection.setRequestProperty("X-Video-Filename", filename);
+                if (metadata[3] != null && !metadata[3].isEmpty()) {
+                    connection.setRequestProperty("Authorization", "Bearer " + metadata[3]);
+                }
+                connection.setFixedLengthStreamingMode(file.length());
+
+                try (OutputStream out = connection.getOutputStream();
+                     FileInputStream in = new FileInputStream(file)) {
                     byte[] buffer = new byte[64 * 1024];
                     int n;
                     while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
-                    out.write(ending);
+                    out.flush();
                 }
+
                 status = connection.getResponseCode();
                 InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
                 if (input != null) {
@@ -405,15 +415,23 @@ public class MainActivity extends Activity {
                     input.close();
                 }
             } catch (Exception e) {
-                try { response = new JSONObject().put("error", e.getMessage() == null ? "Upload failed" : e.getMessage()).toString(); } catch (Exception ignored) {}
+                try {
+                    response = new JSONObject().put("error",
+                        e.getMessage() == null ? "Upload failed" : e.getMessage()).toString();
+                } catch (Exception ignored) {}
             } finally {
                 if (connection != null) connection.disconnect();
                 try { file.delete(); } catch (Exception ignored) {}
             }
+
             final int finalStatus = status;
             final String finalResponse = response;
             runOnUiThread(() -> {
-                if (webView != null) webView.evaluateJavascript("window.nativeResponse && window.nativeResponse(" + JSONObject.quote(callbackId) + "," + finalStatus + "," + JSONObject.quote(finalResponse) + ")", null);
+                if (webView != null) {
+                    webView.evaluateJavascript("window.nativeResponse && window.nativeResponse("
+                        + JSONObject.quote(callbackId) + "," + finalStatus + ","
+                        + JSONObject.quote(finalResponse) + ")", null);
+                }
             });
         }
     }
